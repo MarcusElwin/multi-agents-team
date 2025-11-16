@@ -1,10 +1,17 @@
 # Multi-Agent AI System
 
-A sophisticated multi-agent AI system built with Next.js and the Vercel AI SDK that orchestrates specialized AI agents to complete complex tasks through collaboration.
+A sophisticated multi-agent AI system built with Next.js and the Vercel AI SDK that orchestrates specialized AI agents to complete complex tasks through collaboration. Features real-time streaming UI with live agent status updates.
 
 ## Overview
 
 This project demonstrates an advanced agentic AI architecture where specialized agents work together to research, write, and polish content. The system uses a message bus pattern for inter-agent communication and a coordinator agent to manage the workflow.
+
+**✨ New Features:**
+- 🎨 **Interactive Chat UI** - Clean, modern interface for interacting with agents
+- 📡 **Real-time Streaming** - See agent responses as they're generated
+- 📊 **Live Agent Status** - Visual indicators showing which agent is working
+- ⏱️ **Progress Tracking** - Watch the workflow progress through each agent
+- 📝 **Activity Logs** - Detailed timeline of agent handoffs and actions
 
 ## Architecture
 
@@ -143,7 +150,14 @@ OPENAI_API_KEY=sk-...
 ```bash
 pnpm dev
 ```
-Open [http://localhost:3000](http://localhost:3000) to view the Next.js app.
+Open [http://localhost:3000](http://localhost:3000) to view the **interactive chat UI**.
+
+The web interface provides:
+- Real-time chat with the multi-agent system
+- Live visualization of which agent is currently working
+- Progress indicators and completion status
+- Full message history
+- Suggested prompts to get started
 
 #### Test Agents via CLI
 ```bash
@@ -168,7 +182,35 @@ pnpm start
 
 The system exposes REST endpoints for triggering agent workflows:
 
-### POST `/api/agents`
+### POST `/api/chat` (Streaming - Recommended)
+
+**New!** Streaming endpoint with real-time agent status updates.
+
+**Request:**
+```bash
+curl -X POST http://localhost:3000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "Write a blog post about AI agents"}]}'
+```
+
+**Response:** Server-Sent Events stream with:
+- Real-time agent activation notifications
+- Agent handoff events
+- Workflow progress updates
+- Final results
+
+**Stream Events:**
+```json
+data: {"type":"agent-status","agent":"coordinator","action":"activated","timestamp":"..."}
+data: {"type":"agent-handoff","from":"coordinator","to":"researcherAgent","timestamp":"..."}
+data: {"type":"agent-response","agent":"researcherAgent","content":"...","timestamp":"..."}
+data: {"type":"final-result","content":"Final polished content...","timestamp":"..."}
+data: {"type":"workflow-complete","timestamp":"..."}
+```
+
+Used by the chat UI for real-time updates.
+
+### POST `/api/agents` (Non-Streaming)
 
 Trigger a multi-agent workflow.
 
@@ -231,10 +273,15 @@ curl http://localhost:3000/api/agents
 multi-agents-team/
 ├── app/
 │   ├── api/
-│   │   └── agents/
-│   │       └── route.ts        # Agent workflow API endpoint
+│   │   ├── agents/
+│   │   │   └── route.ts        # Non-streaming API endpoint
+│   │   └── chat/
+│   │       └── route.ts        # Streaming API endpoint (new!)
+│   ├── components/
+│   │   ├── agent-status.tsx    # Agent progress visualization
+│   │   └── chat-interface.tsx  # Main chat UI component
 │   ├── layout.tsx              # Root layout
-│   └── page.tsx                # Home page
+│   └── page.tsx                # Home page with chat interface
 ├── lib/
 │   ├── agents/
 │   │   ├── coordinator-agent.ts   # Orchestrator agent
@@ -254,10 +301,57 @@ multi-agents-team/
 
 ## Usage Examples
 
-### Using the API
+### Using the Web UI (Recommended)
+
+Simply run `pnpm dev` and visit [http://localhost:3000](http://localhost:3000).
+
+**Features:**
+- Type your request in the chat input
+- Watch agents activate in real-time on the right sidebar
+- See loading indicators for each agent (Coordinator → Researcher → Writer → Editor)
+- View activity logs showing agent handoffs
+- Get final polished results in a highlighted card
+
+**Example prompts:**
+- "Write a blog post about the benefits of multi-agent AI systems"
+- "Research the latest trends in artificial intelligence and summarize the key findings"
+- "Create a technical report on neural networks with citations"
+
+### Using the Streaming API
 
 ```typescript
-// Example: Trigger workflow from frontend
+// Example: Using useChat hook (recommended for React apps)
+import { useChat } from '@ai-sdk/react';
+
+function MyComponent() {
+  const { messages, input, handleInputChange, handleSubmit, isLoading, data } = useChat({
+    api: '/api/chat',
+    streamProtocol: 'data'
+  });
+
+  // Listen to streaming agent status updates
+  useEffect(() => {
+    if (data && data.length > 0) {
+      const latestEvent = data[data.length - 1];
+
+      if (latestEvent.type === 'agent-status') {
+        console.log('Agent activated:', latestEvent.agent);
+      }
+
+      if (latestEvent.type === 'final-result') {
+        console.log('Final result:', latestEvent.content);
+      }
+    }
+  }, [data]);
+
+  return (/* your UI */);
+}
+```
+
+### Using the Non-Streaming API
+
+```typescript
+// Example: Trigger workflow without streaming
 async function runAgentWorkflow(userMessage: string) {
   const response = await fetch('/api/agents', {
     method: 'POST',

@@ -1,9 +1,11 @@
 import { Experimental_Agent as Agent, stepCountIs, tool, generateObject, generateText } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 
-export const researcherAgent = new Agent({
-    model: openai('gpt-4.1'),
+export function createResearcherAgent(model: OpenAIModel = DEFAULT_MODEL) {
+    return new Agent({
+    model: openai(model),
     system: `You are the Researcher Agent - an expert in gathering and analyzing information.
 
     Your responsibilities:
@@ -161,4 +163,7 @@ Identify key findings, relevant statistics, and related topics that might need f
     },
     
     stopWhen: stepCountIs(20),
-});
+    });
+}
+
+export const researcherAgent = createResearcherAgent();

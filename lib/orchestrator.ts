@@ -1,5 +1,11 @@
-import { coordinatorAgent, researcherAgent, writerAgent, editorAgent } from './agents';
+import {
+    coordinatorAgent, researcherAgent, writerAgent, editorAgent,
+    createCoordinatorAgent, createResearcherAgent, createWriterAgent, createEditorAgent,
+} from './agents';
 import { MessageBus, messageBus } from './message-bus';
+import { DEFAULT_MODEL, type OpenAIModel } from './models';
+import type { EventSink } from './agent-events';
+import * as log from './logger';
 
 type AgentType = 'coordinator' | 'researcherAgent' | 'writerAgent' | 'editorAgent';
 
@@ -8,29 +14,57 @@ interface AgentResult {
     steps: any[];
 }
 
+export interface OrchestratorOptions {
+    model?: OpenAIModel;
+}
+
 export class AgentOrchestrator {
     private currentAgent: AgentType = 'coordinator';
+    private agents: Record<AgentType, any>;
 
-    constructor(private bus: MessageBus = messageBus) {
-        console.log('🎯 Agent Orchestrator initialized with Message Bus pattern');
+    constructor(private bus: MessageBus = messageBus, options: OrchestratorOptions = {}) {
+        const model = options.model;
+        if (model && model !== DEFAULT_MODEL) {
+            log.debug(`Orchestrator using custom model: ${model}`);
+            this.agents = {
+                coordinator: createCoordinatorAgent(model),
+                researcherAgent: createResearcherAgent(model),
+                writerAgent: createWriterAgent(model),
+                editorAgent: createEditorAgent(model),
+            };
+        } else {
+            this.agents = {
+                coordinator: coordinatorAgent,
+                researcherAgent: researcherAgent,
+                writerAgent: writerAgent,
+                editorAgent: editorAgent,
+            };
+        }
+        log.debug('Agent Orchestrator initialized');
     }
 
     private getAgent(agentType: AgentType) {
-        const agents = {
-            coordinator: coordinatorAgent,
-            researcherAgent: researcherAgent,
-            writerAgent: writerAgent,
-            editorAgent: editorAgent
-        };
-        return agents[agentType];
+        return this.agents[agentType];
     }
 
-    async processUserMessage(userMessage: string): Promise<string> {
-        console.log('\n' + '='.repeat(70));
-        console.log('🚀 STARTING MULTI-AGENT WORKFLOW');
-        console.log('='.repeat(70));
-        console.log(`📨 User: "${userMessage}"`);
-        console.log('='.repeat(70) + '\n');
+    async processUserMessage(userMessage: string, onEvent?: EventSink): Promise<string> {
+        log.box('🚀 v1 Orchestrated Workflow', 'cyan');
+        log.kv({ User: `"${userMessage.slice(0, 80)}${userMessage.length > 80 ? '…' : ''}"` });
+
+        const emit: EventSink = onEvent ?? (() => {});
+        emit({ type: 'workflow_start', mode: 'v1', model: DEFAULT_MODEL, query: userMessage, startingAgent: 'coordinator' });
+
+        // Subscribe to bus messages so the UI can show inter-agent traffic.
+        const busListener = (msg: any) => {
+            emit({
+                type: 'bus_message',
+                from: msg.from,
+                to: msg.to,
+                messageType: msg.metadata.type,
+                content: msg.content,
+            });
+        };
+        this.bus.on('message', busListener);
 
         // Publish user message to bus
         this.bus.publish({
@@ -47,12 +81,13 @@ export class AgentOrchestrator {
         let iterations = 0;
         const maxIterations = 15;
 
+        try {
         while (iterations < maxIterations) {
             iterations++;
 
-            console.log('\n' + '-'.repeat(70));
-            console.log(`ITERATION ${iterations} | AGENT: ${this.currentAgent.toUpperCase()}`);
-            console.log('-'.repeat(70) + '\n');
+            log.iteration(iterations, this.currentAgent);
+            emit({ type: 'iteration_start', iteration: iterations, agent: this.currentAgent });
+            const iterationStart = Date.now();
 
             const agent = this.getAgent(this.currentAgent);
 
@@ -71,25 +106,35 @@ export class AgentOrchestrator {
             try {
                 // Build prompt from message bus context
                 const prompt = this.buildPromptFromMessageBus(this.currentAgent);
-                
-                console.log(`📝 Prompt length: ${prompt.length} chars`);
+
+                log.step(`prompt: ${prompt.length} chars`);
 
                 // Generate response from current agent
-                const result: AgentResult = await agent.generate({ 
-                    prompt 
+                const result: AgentResult = await agent.generate({
+                    prompt
                 });
 
-                console.log(`\n💬 Response: ${result.text.slice(0, 200)}...\n`);
-                console.log(`📊 Steps taken: ${result.steps.length}`);
+                log.step(`steps: ${result.steps.length} · response: ${result.text.length} chars`);
+                log.debug('response preview', result.text.slice(0, 200));
 
                 // Log tool calls
                 const toolCalls = result.steps
                     .filter(step => step.toolCalls && step.toolCalls.length > 0)
                     .flatMap(step => step.toolCalls);
-                
-                if (toolCalls.length > 0) {
-                    console.log(`🔧 Tools used: ${toolCalls.map(tc => tc.toolName).join(', ')}`);
+
+                for (const tc of toolCalls) {
+                    log.tool(tc.toolName);
+                    emit({ type: 'tool_call', agent: this.currentAgent, toolName: tc.toolName });
                 }
+
+                emit({
+                    type: 'iteration_end',
+                    iteration: iterations,
+                    agent: this.currentAgent,
+                    durationMs: Date.now() - iterationStart,
+                    stepCount: result.steps.length,
+                    outputPreview: result.text.slice(0, 240),
+                });
 
                 // Publish agent response to bus WITH structured metadata
                 const responseMessage = this.bus.publish({
@@ -109,22 +154,34 @@ export class AgentOrchestrator {
                 // Check for workflow completion
                 const completion = this.detectCompletion(result);
                 if (completion) {
-                    console.log('\n' + '='.repeat(70));
-                    console.log('✅ WORKFLOW COMPLETE');
-                    console.log('='.repeat(70));
-                    console.log(`📊 Total iterations: ${iterations}`);
-                    console.log(`📝 Final output length: ${completion.finalOutput.length} chars`);
-                    console.log(`📨 Total messages in bus: ${this.bus.getMessageHistory().length}`);
-                    console.log('='.repeat(70) + '\n');
-                    
+                    log.box('✅ Workflow Complete', 'green');
+                    log.kv({
+                        Iterations: iterations,
+                        'Final output': `${completion.finalOutput.length} chars`,
+                        'Bus messages': this.bus.getMessageHistory().length,
+                    });
+                    emit({
+                        type: 'workflow_complete',
+                        mode: 'v1',
+                        result: completion.finalOutput,
+                        iterations,
+                        agentsUsed: Array.from(
+                            new Set(
+                                this.bus.getMessageHistory()
+                                    .filter(m => m.metadata.type === 'agent')
+                                    .map(m => m.from)
+                            )
+                        ),
+                    });
                     return completion.finalOutput;
                 }
 
                 // Check for handoff to another agent
                 const handoff = this.detectHandoff(result);
                 if (handoff) {
-                    console.log(`\n🔄 Handoff: ${this.currentAgent} → ${handoff.targetAgent}`);
-                    
+                    log.handoff(this.currentAgent, handoff.targetAgent);
+                    emit({ type: 'handoff', from: this.currentAgent, to: handoff.targetAgent });
+
                     const previousAgent = this.currentAgent;
                     this.currentAgent = handoff.targetAgent;
                     
@@ -144,8 +201,8 @@ export class AgentOrchestrator {
                 } else {
                     // No handoff and no completion
                     if (this.currentAgent !== 'coordinator') {
-                        console.log('\n⚠️  No handoff from specialist, returning to coordinator');
-                        
+                        log.warn('No handoff from specialist; returning to coordinator');
+
                         const previousAgent = this.currentAgent;
                         this.currentAgent = 'coordinator';
                         
@@ -162,32 +219,39 @@ export class AgentOrchestrator {
                             } as any
                         });
                     } else {
-                        console.log('\n⚠️  No handoff from coordinator, ending workflow');
+                        log.warn('No handoff from coordinator; ending workflow');
+                        emit({ type: 'workflow_complete', mode: 'v1', result: result.text, iterations });
                         return result.text;
                     }
                 }
 
             } catch (error) {
-                console.error(`\n❌ Error with ${this.currentAgent}:`, error);
-                
+                const errMsg = error instanceof Error ? error.message : String(error);
+                log.error(`${this.currentAgent} failed: ${errMsg}`);
+                emit({ type: 'workflow_error', error: errMsg });
+
                 // Log error to message bus
                 this.bus.publish({
                     from: this.currentAgent,
                     to: 'orchestrator',
-                    content: `Error: ${error instanceof Error ? error.message : 'Unknown'}`,
+                    content: `Error: ${errMsg}`,
                     metadata: {
                         timestamp: new Date(),
                         type: 'system',
                         error: true
                     } as any
                 });
-                
-                return `Error during ${this.currentAgent} execution: ${error instanceof Error ? error.message : 'Unknown error'}`;
+
+                return `Error during ${this.currentAgent} execution: ${errMsg}`;
             }
         }
 
-        console.log('\n⚠️  Max iterations reached');
+        log.warn('Max iterations reached');
+        emit({ type: 'workflow_complete', mode: 'v1', result: 'Workflow incomplete: maximum iterations reached', iterations });
         return 'Workflow incomplete: maximum iterations reached';
+        } finally {
+            this.bus.off('message', busListener);
+        }
     }
 
     /**
@@ -351,34 +415,29 @@ export class AgentOrchestrator {
     }
 
     private detectCompletion(result: AgentResult): { finalOutput: string } | null {
-        console.log('\n🔍 DEBUG: Checking for completion...');
-        
-        // Check messages for completion signals
         const messages = (result as any).response?.messages || [];
-        
+
         for (const message of messages) {
             if (message.role === 'tool' && message.content) {
                 for (const item of message.content) {
                     if (item.type === 'tool-result' && item.output?.value) {
                         const res = item.output.value;
-                        
-                        // Coordinator marks complete
+
                         if (res?.complete && res?.finalOutput) {
-                            console.log('✅ Found completion signal');
+                            log.complete('completion signal received');
                             return { finalOutput: res.finalOutput };
                         }
-                        
-                        // Editor marks workflow complete
+
                         if (res?.workflowComplete && res?.finalContent) {
-                            console.log('✅ Found workflow complete');
+                            log.complete('workflow complete (editor)');
                             return { finalOutput: res.finalContent };
                         }
                     }
                 }
             }
         }
-    
-        console.log('❌ No completion detected\n');
+
+        log.debug('no completion detected');
         return null;
     }
 
@@ -386,36 +445,27 @@ export class AgentOrchestrator {
         targetAgent: AgentType;
         context: any;
     } | null {
-        console.log('\n🔍 DEBUG: Checking for handoff...');
-        
-        // The Agent class stores tool results in response.messages, not steps
         const messages = (result as any).response?.messages || [];
-        
-        console.log(`Found ${messages.length} messages in response`);
-        
-        // Look for tool results in messages
+        log.debug(`scanning ${messages.length} response messages for handoff`);
+
         for (const message of messages) {
             if (message.role === 'tool' && message.content) {
                 for (const item of message.content) {
                     if (item.type === 'tool-result' && item.output?.value) {
                         const res = item.output.value;
-                        console.log('Tool result:', JSON.stringify(res, null, 2));
-                        
-                        // Coordinator delegating to specialist agent
+                        log.debug('tool result', res);
+
                         if (res?.handoff && res?.targetAgent) {
-                            console.log(`✅ Found handoff to: ${res.targetAgent}`);
                             return {
                                 targetAgent: res.targetAgent as AgentType,
-                                context: { 
-                                    task: res.task, 
-                                    previousContext: res.context 
+                                context: {
+                                    task: res.task,
+                                    previousContext: res.context
                                 }
                             };
                         }
-                        
-                        // Specialist agent returning to coordinator
+
                         if (res?.done && res?.fromAgent) {
-                            console.log(`✅ Found return from: ${res.fromAgent}`);
                             return {
                                 targetAgent: 'coordinator' as AgentType,
                                 context: {
@@ -429,15 +479,14 @@ export class AgentOrchestrator {
                 }
             }
         }
-    
-        console.log('❌ No handoff detected\n');
+
         return null;
     }
 
     reset() {
         this.currentAgent = 'coordinator';
         this.bus.clear();
-        console.log('🔄 Orchestrator reset');
+        log.debug('Orchestrator reset');
     }
 
     getMessageHistory() {

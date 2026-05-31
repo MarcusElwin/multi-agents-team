@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import * as log from './logger';
 
 export interface Message {
     id: string,
@@ -18,38 +19,56 @@ export interface Message {
     };
 }
 
+// Canonical agent ids and the aliases LLMs sometimes invent for them.
+const AGENT_ALIASES: Record<string, string> = {
+    backend: 'backendAgent',
+    'backend-agent': 'backendAgent',
+    backend_agent: 'backendAgent',
+    frontend: 'frontendAgent',
+    'frontend-agent': 'frontendAgent',
+    frontend_agent: 'frontendAgent',
+    design: 'designAgent',
+    'design-agent': 'designAgent',
+    design_agent: 'designAgent',
+    researcher: 'researcherAgent',
+    writer: 'writerAgent',
+    editor: 'editorAgent',
+};
+
+function canonicalizeAgentName(name: string): string {
+    return AGENT_ALIASES[name] ?? name;
+}
+
 export class MessageBus extends EventEmitter {
     private messages: Message[] = [];
 
     constructor() {
         super();
-        console.log('📨 MessageBus initialized');
+        log.debug('MessageBus initialized');
     }
 
     publish(message: Omit<Message, 'id'>) {
+        const canonicalTo = canonicalizeAgentName(message.to);
+        const canonicalFrom = canonicalizeAgentName(message.from);
         const msgWithId: Message = {
             id: crypto.randomUUID(),
-            ...message
+            ...message,
+            from: canonicalFrom,
+            to: canonicalTo,
         };
         this.messages.push(msgWithId);
 
-        console.log(`
-        📬 Message Published:
-        From: ${msgWithId.from}
-        To: ${msgWithId.to}
-        Type: ${msgWithId.metadata.type}
-        Content: ${msgWithId.content.slice(0, 50)}...
-            `);
-            
+        log.message(msgWithId.from, msgWithId.to, msgWithId.metadata.type, msgWithId.content);
+
         this.emit('message', msgWithId);
         this.emit(`message:${msgWithId.to}`, msgWithId);
-            
+
         return msgWithId;
     }
 
     subscribe(agentId: string, callback: (message: Message) => void) {
         this.on(`message:${agentId}`, callback);
-        console.log(`🔔 Agent ${agentId} subscribed to messages`);
+        log.debug(`Agent ${agentId} subscribed`);
     }
 
     // Updated to support optional filtering
@@ -68,7 +87,7 @@ export class MessageBus extends EventEmitter {
 
     clear() {
         this.messages = [];
-        console.log('🗑️ Message bus cleared');
+        log.debug('Message bus cleared');
     }
 
     getHandoffMessages(): Message[] {

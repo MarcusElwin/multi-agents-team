@@ -1,9 +1,11 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 
-export const editorAgent = new Agent({
-    model: openai('gpt-4.1'),
+export function createEditorAgent(model: OpenAIModel = DEFAULT_MODEL) {
+    return new Agent({
+    model: openai(model),
     system: `You are the Editor Agent - an expert in reviewing and polishing content.
 
 Your responsibilities:
@@ -91,4 +93,7 @@ When editing is complete:
     },
     
     stopWhen: stepCountIs(8),
-});
+    });
+}
+
+export const editorAgent = createEditorAgent();

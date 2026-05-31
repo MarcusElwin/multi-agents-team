@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { AgentOrchestrator } from '@/lib/orchestrator';
+import { runAgentsWithCoordination } from '@/lib/runner';
 import { messageBus } from '@/lib/message-bus';
 import { resolveModel } from '@/lib/models';
 import type { AgentEvent } from '@/lib/agent-events';
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   const resolvedModel = resolveModel(model);
 
   console.log('\n========================================');
-  console.log(`🎬 API REQUEST: v1 workflow · model=${resolvedModel}`);
+  console.log(`🎬 API REQUEST: v2 workflow · model=${resolvedModel}`);
   console.log('========================================\n');
 
   const encoder = new TextEncoder();
@@ -29,10 +29,11 @@ export async function POST(req: NextRequest) {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
         } catch {
-          // ignore
+          // controller already closed
         }
       };
 
+      // Keepalive comment every 15s to defeat proxy buffering
       const keepalive = setInterval(() => {
         if (closed) return;
         try {
@@ -43,16 +44,15 @@ export async function POST(req: NextRequest) {
       }, 15_000);
 
       try {
-        const orchestrator = new AgentOrchestrator(messageBus, { model: resolvedModel });
-        await orchestrator.processUserMessage(message, send);
-        // The orchestrator emits its own workflow_complete; don't duplicate it here.
+        await runAgentsWithCoordination(message, { model: resolvedModel }, send);
+        // The runner emits its own workflow_complete; don't duplicate it here.
 
         console.log('\n========================================');
-        console.log('✅ API RESPONSE: Workflow Complete');
+        console.log('✅ API RESPONSE: v2 Workflow Complete');
         console.log('========================================\n');
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : 'Unknown';
-        console.error('❌ API Error:', errMsg);
+        console.error('❌ v2 API Error:', errMsg);
         send({ type: 'workflow_error', error: errMsg });
       } finally {
         clearInterval(keepalive);
@@ -79,7 +79,9 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     status: 'ready',
-    agents: ['coordinator', 'researcherAgent', 'writerAgent', 'editorAgent'],
+    pattern: 'choreography (peer-to-peer, round-robin)',
+    agents: ['backendAgent', 'frontendAgent', 'designAgent'],
     messageBusActive: true,
+    currentBusStats: messageBus.getStats(),
   });
 }

@@ -1,10 +1,12 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 
-export const coordinatorAgent = new Agent({
-    model: openai('gpt-5'),
-    system: `You are the Coordinator Agent - orchestrator of specialized agents.
+export function createCoordinatorAgent(model: OpenAIModel = DEFAULT_MODEL) {
+    return new Agent({
+        model: openai(model),
+        system: `You are the Coordinator Agent - orchestrator of specialized agents.
 
     Your role:
     1. Deeply understand what the user wants to achieve
@@ -53,7 +55,7 @@ export const coordinatorAgent = new Agent({
             2. Which agents are needed?
             3. What order makes sense?
             4. What should each agent focus on?`,
-            
+
             inputSchema: z.object({
                 userIntent: z.string()
                     .describe('What you understand the user wants to achieve'),
@@ -67,20 +69,20 @@ export const coordinatorAgent = new Agent({
                 reasoning: z.string()
                     .describe('Your complete reasoning for this workflow plan')
             }),
-            
+
             execute: async ({ userIntent, selectedAgents, reasoning }) => {
                 console.log('  🔍 Coordinator Analysis:');
                 console.log(`     User Intent: ${userIntent}`);
                 console.log(`     Reasoning: ${reasoning}`);
                 console.log('     Planned Workflow:');
-                
+
                 // Sort agents by order
                 const sortedAgents = selectedAgents.sort((a, b) => a.order - b.order);
-                
+
                 sortedAgents.forEach((a, i) => {
                     console.log(`       ${i + 1}. ${a.agent} - ${a.task}`);
                 });
-                
+
                 return {
                     userIntent,
                     reasoning,
@@ -102,7 +104,7 @@ export const coordinatorAgent = new Agent({
             - editorAgent: When you need content reviewed, polished, or refined
             
             Include context from previous agents so the next agent has all needed information.`,
-            
+
             inputSchema: z.object({
                 agentName: z.enum(["researcherAgent", "writerAgent", "editorAgent"])
                     .describe('Which specialized agent to delegate to'),
@@ -113,7 +115,7 @@ export const coordinatorAgent = new Agent({
                 priority: z.enum(['low', 'medium', 'high']).optional().default('medium')
                     .describe('How important/urgent this task is'),
             }),
-            
+
             async execute({ agentName, taskDetails, context, priority }) {
                 console.log(`\n  🎯 DELEGATION:`);
                 console.log(`     To: ${agentName}`);
@@ -122,7 +124,7 @@ export const coordinatorAgent = new Agent({
                 if (context) {
                     console.log(`     Context: ${context.slice(0, 60)}${context.length > 60 ? '...' : ''}`);
                 }
-                
+
                 // Return handoff signal for orchestrator
                 return {
                     handoff: true,              // ← Tells orchestrator to switch agents
@@ -134,7 +136,7 @@ export const coordinatorAgent = new Agent({
                 };
             },
         }),
-        
+
         markComplete: tool({
             description: `Mark the entire workflow as complete and provide the final response to the user.
             
@@ -147,7 +149,7 @@ export const coordinatorAgent = new Agent({
             - You still need another agent to do work
             - The workflow is not finished
             - You're waiting for agent results`,
-            
+
             inputSchema: z.object({
                 finalResponse: z.string()
                     .describe('The complete, polished final answer to give the user'),
@@ -157,7 +159,7 @@ export const coordinatorAgent = new Agent({
                     .optional()
                     .describe('Which agents were involved in this workflow'),
             }),
-            
+
             async execute({ finalResponse, workflowSummary, agentsUsed }) {
                 console.log(`\n  ✅ WORKFLOW COMPLETE`);
                 console.log(`     Summary: ${workflowSummary}`);
@@ -165,7 +167,7 @@ export const coordinatorAgent = new Agent({
                     console.log(`     Agents used: ${agentsUsed.join(' → ')}`);
                 }
                 console.log(`     Response length: ${finalResponse.length} characters`);
-                
+
                 // Return completion signal for orchestrator
                 return {
                     complete: true,             // ← Tells orchestrator workflow is done
@@ -180,4 +182,7 @@ export const coordinatorAgent = new Agent({
     },
     stopWhen: stepCountIs(10),
 
-})
+    });
+}
+
+export const coordinatorAgent = createCoordinatorAgent();

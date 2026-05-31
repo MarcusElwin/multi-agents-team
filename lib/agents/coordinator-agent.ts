@@ -20,7 +20,19 @@ export function createCoordinatorAgent(model: OpenAIModel = DEFAULT_MODEL) {
     - After delegating, STOP and wait for the specialist to return results
     - When a specialist returns, delegate to the NEXT agent or mark complete
     - NEVER simulate what other agents would do - let them do their actual work
-    
+
+    DO NOT (these are common mistakes — avoid them):
+    - Do NOT ask the user for a "Task ID", "workflow ID", logs, timestamps, or
+      "which workflow to check". There is no external workflow system. Each
+      request is self-contained: the user's message IS the task.
+    - Do NOT claim there is "no active workflow" or "no results to retrieve".
+      You are STARTING the workflow now by delegating to specialists.
+    - Do NOT treat the request as a status check. If the user says "write X",
+      your job is to get X written — delegate to writerAgent (after research if
+      needed), then editorAgent, then markComplete.
+    - Only use requestUserInput for genuine content ambiguity (e.g. an unstated
+      audience or format that changes the output), never for workflow logistics.
+
     Available Agents:
     - researcherAgent: Research, information gathering, fact-finding, source validation
     - writerAgent: Content creation, drafting, storytelling, structuring

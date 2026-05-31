@@ -10,9 +10,10 @@ export interface Message {
         timestamp: Date;
         type: 'user' | 'agent' | 'system';
         agentType?: 'coordinator' | 'researcherAgent' | 'writerAgent' | 'editorAgent';
-        // Add optional extended metadata
-        toolResults?: any;
-        handoffContext?: any;
+        // Optional extended metadata. Kept loosely typed (consumers narrow at
+        // the use site, e.g. orchestrator's HandoffContext); unknown beats any.
+        toolResults?: Record<string, unknown>;
+        handoffContext?: Record<string, unknown>;
         stepCount?: number;
         workComplete?: boolean;
         error?: boolean;

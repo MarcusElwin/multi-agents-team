@@ -2,8 +2,9 @@ import {
     coordinatorAgent, researcherAgent, writerAgent, editorAgent,
     createCoordinatorAgent, createResearcherAgent, createWriterAgent, createEditorAgent,
 } from './agents';
-import { MessageBus } from './message-bus';
+import { MessageBus, type Message } from './message-bus';
 import { Conversation } from './conversation';
+import { waitForInput } from './input-registry';
 import { DEFAULT_MODEL, type OpenAIModel } from './models';
 import type { EventSink } from './agent-events';
 import * as log from './logger';
@@ -28,6 +29,51 @@ interface AgentResult {
     text: string;
     steps: AgentStep[];
     response?: { messages?: ResponseMessage[] };
+}
+
+// Shape of the tool-result `output.value` payloads we read from agent results.
+interface ToolResultValue {
+    handoff?: boolean;
+    targetAgent?: string;
+    task?: string;
+    context?: string;
+    complete?: boolean;
+    finalOutput?: string;
+    workflowComplete?: boolean;
+    finalContent?: string;
+    done?: boolean;
+    fromAgent?: string;
+    nextAgent?: string;
+    // analyzeRequest output (for the plan UI)
+    userIntent?: string;
+    workflow?: Array<{ agent: string; task: string }>;
+    // requestUserInput output (human-in-the-loop)
+    requestUserInput?: boolean;
+    question?: string;
+}
+
+// Context carried alongside a handoff, stored in message metadata.
+interface HandoffContext {
+    task?: string;
+    previousContext?: string;
+    fromAgent?: string;
+    recommendedNext?: string;
+    nextAgent?: string;
+    reasoning?: string;
+    findings?: string;
+    structuredData?: unknown;
+    sources?: string[];
+    keyInsights?: string[];
+    draft?: string;
+    contentType?: string;
+    finalContent?: string;
+    improvements?: string;
+    [key: string]: unknown;
+}
+
+interface Handoff {
+    targetAgent: AgentType;
+    context: HandoffContext;
 }
 
 export interface OrchestratorOptions {
@@ -92,7 +138,7 @@ export class AgentOrchestrator {
         this.bus.clear();
 
         // Subscribe to bus messages so the UI can show inter-agent traffic.
-        const busListener = (msg: any) => {
+        const busListener = (msg: Message) => {
             emit({
                 type: 'bus_message',
                 from: msg.from,
@@ -173,19 +219,60 @@ export class AgentOrchestrator {
                 });
 
                 // Publish agent response to bus WITH structured metadata
-                const responseMessage = this.bus.publish({
+                this.bus.publish({
                     from: this.currentAgent,
                     to: 'orchestrator',
                     content: result.text,
-                    metadata: { 
-                        timestamp: new Date(), 
+                    metadata: {
+                        timestamp: new Date(),
                         type: 'agent',
                         agentType: this.currentAgent,
                         // Store tool results in metadata for context building
                         toolResults: this.extractToolResults(result),
                         stepCount: result.steps.length
-                    } as any // Extended metadata
+                    }
                 });
+
+                // Surface the coordinator's plan to the UI as soon as it analyzes.
+                const plan = this.detectPlan(result);
+                if (plan) {
+                    emit({
+                        type: 'agent_plan',
+                        agent: this.currentAgent,
+                        intent: plan.intent,
+                        steps: plan.steps,
+                    });
+                }
+
+                // Check whether the coordinator is asking the human a question.
+                const inputReq = this.detectInputRequest(result);
+                if (inputReq) {
+                    const requestId = crypto.randomUUID();
+                    log.step(`requesting user input: ${inputReq.question}`);
+                    emit({
+                        type: 'input_request',
+                        requestId,
+                        agent: this.currentAgent,
+                        question: inputReq.question,
+                    });
+
+                    // Pause until the client delivers an answer (or it times out).
+                    const answer = await waitForInput(requestId);
+                    log.step(`received user input (${answer.length} chars)`);
+
+                    // Feed the answer back into the conversation so the next
+                    // coordinator turn sees it as fresh user context.
+                    this.bus.publish({
+                        from: 'user',
+                        to: 'coordinator',
+                        content: answer
+                            ? `Answer to "${inputReq.question}": ${answer}`
+                            : `(no answer provided for "${inputReq.question}" — proceed with sensible defaults)`,
+                        metadata: { timestamp: new Date(), type: 'user' },
+                    });
+                    // Loop again so the coordinator continues with the answer.
+                    continue;
+                }
 
                 // Check for workflow completion
                 const completion = this.detectCompletion(result);
@@ -231,7 +318,7 @@ export class AgentOrchestrator {
                             type: 'system',
                             agentType: previousAgent,
                             handoffContext: handoff.context
-                        } as any
+                        }
                     });
                     
                 } else {
@@ -252,7 +339,7 @@ export class AgentOrchestrator {
                                 type: 'system',
                                 agentType: previousAgent,
                                 workComplete: true
-                            } as any
+                            }
                         });
                     } else {
                         log.warn('No handoff from coordinator; ending workflow');
@@ -275,7 +362,7 @@ export class AgentOrchestrator {
                         timestamp: new Date(),
                         type: 'system',
                         error: true
-                    } as any
+                    }
                 });
 
                 return `Error during ${this.currentAgent} execution: ${errMsg}`;
@@ -305,7 +392,7 @@ export class AgentOrchestrator {
         
         // Get the most recent handoff message
         const lastHandoff = messagesToAgent
-            .filter(m => (m.metadata as any).handoffContext)
+            .filter(m => m.metadata.handoffContext)
             .slice(-1)[0];
     
         let prompt = '';
@@ -313,18 +400,37 @@ export class AgentOrchestrator {
         // If this is the coordinator with initial user message
         if (targetAgent === 'coordinator' && lastUserMessage && messagesFromAgent.length === 0) {
             const historyBlock = this.conversation.renderHistory();
+            // Explicitly frame this as a NEW request the coordinator must fulfil.
+            // Without this, weaker models treat the orchestration framing as a
+            // cue to "check workflow status" and ask nonsense questions.
+            const guard =
+                'This is a brand-new user request. There is NO pre-existing workflow, ' +
+                'no prior agent results to retrieve, and nothing to "check". Your job is ' +
+                'to fulfil the request below: analyze it, then delegate to a specialist. ' +
+                'Only call requestUserInput if the request is genuinely too ambiguous to start.';
             prompt = historyBlock
-                ? `Prior conversation:\n${historyBlock}\n\n---\n\nCurrent request:\n${lastUserMessage.content}`
-                : lastUserMessage.content;
+                ? `${guard}\n\nPrior conversation:\n${historyBlock}\n\n---\n\nCurrent request:\n${lastUserMessage.content}`
+                : `${guard}\n\nRequest:\n${lastUserMessage.content}`;
+        }
+        // Coordinator resuming after asking the user a question: a fresh user
+        // message arrived AFTER the coordinator's own last output. (We can't just
+        // check the very last message, since the orchestrator publishes an
+        // "Activating coordinator" system message right before this runs.)
+        else if (targetAgent === 'coordinator' && lastUserMessage && this.isResumeAfterInput()) {
+            const historyBlock = this.conversation.renderHistory();
+            prompt =
+                (historyBlock ? `Prior conversation:\n${historyBlock}\n\n---\n\n` : '') +
+                `${lastUserMessage.content}\n\n` +
+                `Treat the above as the task. Analyze it and delegate to the appropriate agent, or mark complete if done. Do NOT ask about workflow status.`;
         }
         // If this is a handoff from coordinator to specialist
         else if (lastHandoff && targetAgent !== 'coordinator') {
-            const handoffMeta = lastHandoff.metadata as any;
+            const handoffContext = lastHandoff.metadata.handoffContext as HandoffContext | undefined;
             prompt = `You have been assigned a task by the coordinator.\n\n`;
-            prompt += `**Task:** ${handoffMeta.handoffContext?.task || lastHandoff.content}\n\n`;
-            
-            if (handoffMeta.handoffContext?.previousContext) {
-                prompt += `**Context from previous work:**\n${handoffMeta.handoffContext.previousContext}\n\n`;
+            prompt += `**Task:** ${handoffContext?.task || lastHandoff.content}\n\n`;
+
+            if (handoffContext?.previousContext) {
+                prompt += `**Context from previous work:**\n${handoffContext.previousContext}\n\n`;
             }
             
             prompt += 'Please complete your specialized work on this task.';
@@ -333,16 +439,16 @@ export class AgentOrchestrator {
         else if (targetAgent === 'coordinator') {
             // Get recent messages from specialists (agents returning work)
             const recentAgentMessages = this.bus.getMessageHistory()
-                .filter(m => 
-                    m.to === 'coordinator' && 
-                    m.metadata.type === 'system' && 
-                    (m.metadata as any).handoffContext
+                .filter(m =>
+                    m.to === 'coordinator' &&
+                    m.metadata.type === 'system' &&
+                    m.metadata.handoffContext
                 )
                 .slice(-1);  // Get the most recent handoff back to coordinator
-            
+
             if (recentAgentMessages.length > 0) {
                 const lastReturn = recentAgentMessages[0];
-                const context = (lastReturn.metadata as any).handoffContext;
+                const context = lastReturn.metadata.handoffContext as HandoffContext;
                 
                 prompt = `A specialist agent has completed their work and returned results.\n\n`;
                 prompt += `**Agent:** ${context.fromAgent || lastReturn.from}\n\n`;
@@ -423,7 +529,7 @@ export class AgentOrchestrator {
     /**
      * Format handoff content for message bus
      */
-    private formatHandoffContent(handoff: any): string {
+    private formatHandoffContent(handoff: Handoff): string {
         let content = `Task delegated: ${handoff.context.task || 'Work required'}\n`;
         
         if (handoff.context.previousContext) {
@@ -436,10 +542,10 @@ export class AgentOrchestrator {
     /**
      * Extract tool results from agent result for storage in message metadata
      */
-    private extractToolResults(result: AgentResult): any {
-        const allResults: any = {};
-        const messages = (result as any).response?.messages || [];
-        
+    private extractToolResults(result: AgentResult): Record<string, unknown> {
+        const allResults: Record<string, unknown> = {};
+        const messages = result.response?.messages ?? [];
+
         for (const message of messages) {
             if (message.role === 'tool' && message.content) {
                 for (const item of message.content) {
@@ -449,25 +555,77 @@ export class AgentOrchestrator {
                 }
             }
         }
-        
+
         return allResults;
     }
 
+    /**
+     * True when a user message arrived after the coordinator's most recent
+     * output — i.e. the coordinator asked the user something and we're resuming
+     * with their answer. Distinguishes the resume case from the "receiving
+     * specialist results" case, which would otherwise hit the wrong prompt.
+     */
+    private isResumeAfterInput(): boolean {
+        const history = this.bus.getMessageHistory();
+        let lastUserIdx = -1;
+        let lastCoordOutputIdx = -1;
+        history.forEach((m, i) => {
+            if (m.metadata.type === 'user') lastUserIdx = i;
+            if (m.from === 'coordinator' && m.metadata.type === 'agent') lastCoordOutputIdx = i;
+        });
+        return lastUserIdx > lastCoordOutputIdx && lastUserIdx !== -1;
+    }
+
+    /** Iterate over tool-result payloads in an agent result. */
+    private forEachToolResult(result: AgentResult, fn: (res: ToolResultValue) => void): void {
+        for (const message of result.response?.messages ?? []) {
+            if (message.role === 'tool' && message.content) {
+                for (const item of message.content) {
+                    if (item.type === 'tool-result' && item.output?.value) {
+                        fn(item.output.value as ToolResultValue);
+                    }
+                }
+            }
+        }
+    }
+
+    /** Extract the coordinator's analyzeRequest plan, if present. */
+    private detectPlan(result: AgentResult): { intent: string; steps: Array<{ agent: string; task: string }> } | null {
+        let plan: { intent: string; steps: Array<{ agent: string; task: string }> } | null = null;
+        this.forEachToolResult(result, (res) => {
+            if (res.userIntent && Array.isArray(res.workflow)) {
+                plan = { intent: res.userIntent, steps: res.workflow };
+            }
+        });
+        return plan;
+    }
+
+    /** Detect a requestUserInput tool call, if the coordinator asked the user. */
+    private detectInputRequest(result: AgentResult): { question: string } | null {
+        let req: { question: string } | null = null;
+        this.forEachToolResult(result, (res) => {
+            if (res.requestUserInput && res.question) {
+                req = { question: res.question };
+            }
+        });
+        return req;
+    }
+
     private detectCompletion(result: AgentResult): { finalOutput: string } | null {
-        const messages = (result as any).response?.messages || [];
+        const messages = result.response?.messages ?? [];
 
         for (const message of messages) {
             if (message.role === 'tool' && message.content) {
                 for (const item of message.content) {
                     if (item.type === 'tool-result' && item.output?.value) {
-                        const res = item.output.value;
+                        const res = item.output.value as ToolResultValue;
 
-                        if (res?.complete && res?.finalOutput) {
+                        if (res.complete && res.finalOutput) {
                             log.complete('completion signal received');
                             return { finalOutput: res.finalOutput };
                         }
 
-                        if (res?.workflowComplete && res?.finalContent) {
+                        if (res.workflowComplete && res.finalContent) {
                             log.complete('workflow complete (editor)');
                             return { finalOutput: res.finalContent };
                         }
@@ -480,21 +638,18 @@ export class AgentOrchestrator {
         return null;
     }
 
-    private detectHandoff(result: AgentResult): {
-        targetAgent: AgentType;
-        context: any;
-    } | null {
-        const messages = (result as any).response?.messages || [];
+    private detectHandoff(result: AgentResult): Handoff | null {
+        const messages = result.response?.messages ?? [];
         log.debug(`scanning ${messages.length} response messages for handoff`);
 
         for (const message of messages) {
             if (message.role === 'tool' && message.content) {
                 for (const item of message.content) {
                     if (item.type === 'tool-result' && item.output?.value) {
-                        const res = item.output.value;
+                        const res = item.output.value as ToolResultValue;
                         log.debug('tool result', res);
 
-                        if (res?.handoff && res?.targetAgent) {
+                        if (res.handoff && res.targetAgent) {
                             return {
                                 targetAgent: res.targetAgent as AgentType,
                                 context: {
@@ -504,7 +659,7 @@ export class AgentOrchestrator {
                             };
                         }
 
-                        if (res?.done && res?.fromAgent) {
+                        if (res.done && res.fromAgent) {
                             return {
                                 targetAgent: 'coordinator' as AgentType,
                                 context: {

@@ -137,6 +137,32 @@ export function createCoordinatorAgent(model: OpenAIModel = DEFAULT_MODEL) {
             },
         }),
 
+        requestUserInput: tool({
+            description: `Ask the human user a clarifying question when the request is ambiguous and you cannot proceed confidently without their answer.
+
+            Use this SPARINGLY and only when:
+            - The request is genuinely ambiguous (e.g. missing a key choice, audience, or constraint)
+            - Proceeding on a guess would likely produce the wrong result
+
+            Do NOT use this for trivial defaults you can reasonably assume. After you receive the answer, continue the workflow normally (analyze/delegate).`,
+
+            inputSchema: z.object({
+                question: z.string()
+                    .describe('A single, specific question for the user. Keep it short and concrete.'),
+            }),
+
+            // The orchestrator intercepts this tool call (it sees the question in
+            // the result), emits an input_request event, waits for the answer,
+            // and feeds it back into the next coordinator turn.
+            async execute({ question }) {
+                console.log(`\n  ❓ REQUEST USER INPUT: ${question}`);
+                return {
+                    requestUserInput: true,
+                    question,
+                };
+            },
+        }),
+
         markComplete: tool({
             description: `Mark the entire workflow as complete and provide the final response to the user.
             

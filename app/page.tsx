@@ -1,16 +1,18 @@
 'use client';
 
 import { useState, useRef, useEffect, type FormEvent } from 'react';
-import { ArrowUp, Bot, User, Sparkles, Network, Workflow, Check, Loader2, Bug } from 'lucide-react';
+import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { DEFAULT_MODEL, type OpenAIModel } from '@/lib/models';
+import { MODES, type Mode, prettyAgentName } from '@/lib/modes';
 import { MarkdownContent } from './components/MarkdownContent';
 import { ModelSelector } from './components/ModelSelector';
+import { ModeSelector } from './components/ModeSelector';
 import { AgentTimeline, type LiveAgent } from './components/AgentTimeline';
+import { ArchitecturePanel } from './components/ArchitecturePanel';
+import { InputRequestCard } from './components/InputRequestCard';
 import { DebugDrawer } from './components/DebugDrawer';
 import type { AgentEvent } from '@/lib/agent-events';
-
-type Mode = 'v1' | 'v2';
 
 interface ChatMessage {
   id: string;
@@ -26,26 +28,25 @@ interface ChatMessage {
   };
 }
 
+interface PlanStep {
+  agent: string;
+  task: string;
+}
+
+interface PendingInput {
+  requestId: string;
+  agent: string;
+  question: string;
+}
+
 interface LiveRun {
   agents: Map<string, LiveAgent>;
   currentAgent?: string;
   iteration?: number;
   events: AgentEvent[];
+  plan?: { intent: string; steps: PlanStep[] };
+  pendingInput?: PendingInput;
 }
-
-const SUGGESTIONS_V1 = [
-  'Write a short blog post about AI agents in 2026',
-  'Research recent breakthroughs in multi-agent systems',
-  'Draft a product launch announcement for a developer tool',
-  'Summarize the state of open-source LLM frameworks',
-];
-
-const SUGGESTIONS_V2 = [
-  'Design a task management feature with priorities and assignment',
-  'Build a real-time analytics dashboard',
-  'Create a notification preferences settings page',
-  'Spec out a multi-tenant billing system',
-];
 
 function emptyRun(): LiveRun {
   return { agents: new Map(), events: [] };
@@ -135,6 +136,16 @@ export default function Home() {
       case 'handoff':
         next.currentAgent = event.to;
         break;
+      case 'agent_plan':
+        next.plan = { intent: event.intent, steps: event.steps };
+        break;
+      case 'input_request':
+        next.pendingInput = {
+          requestId: event.requestId,
+          agent: event.agent,
+          question: event.question,
+        };
+        break;
       case 'workflow_complete':
         next.currentAgent = undefined;
         break;
@@ -157,7 +168,9 @@ export default function Home() {
     setIsLoading(true);
     setLive(emptyRun());
 
-    const endpoint = mode === 'v1' ? '/api/agents' : '/api/agents-v2';
+    const endpoint = MODES[mode].endpoint;
+    // Prior turns become the agents' memory. Snapshot before appending this turn.
+    const history = messages.map((m) => ({ role: m.role, content: m.content }));
     let finalEvent: Extract<AgentEvent, { type: 'workflow_complete' }> | null = null;
     let errorEvent: Extract<AgentEvent, { type: 'workflow_error' }> | null = null;
     const collectedEvents: AgentEvent[] = [];
@@ -166,7 +179,7 @@ export default function Home() {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed, model }),
+        body: JSON.stringify({ message: trimmed, model, history }),
       });
 
       if (!res.ok || !res.body) {
@@ -209,7 +222,7 @@ export default function Home() {
         throw new Error(errorEvent.error);
       }
 
-      const assistantMsg = buildAssistantMessage(mode, model, finalEvent, collectedEvents);
+      const assistantMsg = buildAssistantMessage(model, finalEvent);
       setMessages((m) => [...m, assistantMsg]);
     } catch (e) {
       const err = e instanceof Error ? e.message : 'Unknown error';
@@ -231,8 +244,23 @@ export default function Home() {
     send(input);
   }
 
+  // Deliver a human answer to a paused run, then clear the prompt card so the
+  // timeline takes over again while the agents resume.
+  async function respondToInput(requestId: string, answer: string) {
+    setLive((prev) => ({ ...prev, pendingInput: undefined }));
+    try {
+      await fetch('/api/agents/input', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId, answer }),
+      });
+    } catch {
+      // The run will time out and proceed with defaults if this fails.
+    }
+  }
+
   const hasMessages = messages.length > 0;
-  const suggestions = mode === 'v1' ? SUGGESTIONS_V1 : SUGGESTIONS_V2;
+  const spec = MODES[mode];
   const liveAgents = Array.from(live.agents.values());
 
   return (
@@ -245,13 +273,13 @@ export default function Home() {
           <div>
             <div className="text-sm font-semibold leading-tight">Multi-Agent Team</div>
             <div className="text-[11px] leading-tight text-stone-500">
-              {mode === 'v1' ? 'Orchestrated · coordinator + research/write/edit' : 'Choreographed · backend/frontend/design'}
+              {spec.pattern} · {spec.tagline}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <ModelSelector value={model} onChange={setModel} disabled={isLoading} />
-          <ModeToggle mode={mode} onChange={setMode} disabled={isLoading} />
+          <ModeSelector value={mode} onChange={setMode} disabled={isLoading} />
           <DebugToggle
             open={debugOpen}
             onClick={() => setDebugOpen((v) => !v)}
@@ -263,16 +291,12 @@ export default function Home() {
 
       <main className="flex flex-1 flex-col overflow-hidden">
         {!hasMessages ? (
-          <div className="flex flex-1 flex-col items-center justify-center px-4">
+          <div className="flex flex-1 flex-col items-center overflow-y-auto px-4 py-10 [scrollbar-width:thin]">
             <div className="w-full max-w-3xl">
               <h1 className="mb-2 text-center text-3xl font-semibold tracking-tight text-stone-900">
                 {mode === 'v1' ? 'What should we research today?' : 'What should we build together?'}
               </h1>
-              <p className="mb-8 text-center text-sm text-stone-500">
-                {mode === 'v1'
-                  ? 'A coordinator will dispatch researcher → writer → editor.'
-                  : 'Backend, frontend, and design agents collaborate via a shared message bus.'}
-              </p>
+              <p className="mb-8 text-center text-sm text-stone-500">{spec.description}</p>
               <InputArea
                 input={input}
                 setInput={setInput}
@@ -280,7 +304,7 @@ export default function Home() {
                 isLoading={isLoading}
               />
               <div className="mt-6 flex flex-wrap justify-center gap-2">
-                {suggestions.map((s) => (
+                {spec.suggestions.map((s) => (
                   <button
                     key={s}
                     type="button"
@@ -292,6 +316,8 @@ export default function Home() {
                   </button>
                 ))}
               </div>
+
+              <ArchitecturePanel mode={mode} className="mt-10" />
             </div>
           </div>
         ) : (
@@ -311,6 +337,14 @@ export default function Home() {
                     currentAgent={live.currentAgent}
                     iteration={live.iteration}
                     now={now}
+                    plan={live.plan}
+                  />
+                )}
+                {live.pendingInput && (
+                  <InputRequestCard
+                    agent={live.pendingInput.agent}
+                    question={live.pendingInput.question}
+                    onSubmit={(answer) => respondToInput(live.pendingInput!.requestId, answer)}
                   />
                 )}
               </div>
@@ -324,7 +358,7 @@ export default function Home() {
                   isLoading={isLoading}
                 />
                 <p className="mt-2 text-center text-[11px] text-stone-400">
-                  Agents can take 30–90s. Open the debug drawer for live tool calls and bus traffic.
+                  {spec.pattern} agents · {spec.durationHint}. Open the debug drawer for live tool calls and bus traffic.
                 </p>
               </div>
             </div>
@@ -342,10 +376,8 @@ export default function Home() {
 }
 
 function buildAssistantMessage(
-  mode: Mode,
   model: string,
   finalEvent: Extract<AgentEvent, { type: 'workflow_complete' }> | null,
-  allEvents: AgentEvent[],
 ): ChatMessage {
   if (!finalEvent) {
     return {
@@ -396,59 +428,6 @@ function buildAssistantMessage(
       })),
     },
   };
-}
-
-function prettyAgentName(name: string): string {
-  return name
-    .replace(/Agent$/, '')
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/^./, (c) => c.toUpperCase())
-    .trim();
-}
-
-function ModeToggle({
-  mode,
-  onChange,
-  disabled,
-}: {
-  mode: Mode;
-  onChange: (m: Mode) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex items-center rounded-full border border-stone-200 bg-white p-0.5 text-xs">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onChange('v1')}
-        className={cn(
-          'flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors',
-          mode === 'v1'
-            ? 'bg-stone-900 text-white'
-            : 'text-stone-600 hover:text-stone-900',
-          disabled && 'cursor-not-allowed opacity-50'
-        )}
-      >
-        <Workflow className="h-3.5 w-3.5" />
-        v1 orchestrated
-      </button>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onChange('v2')}
-        className={cn(
-          'flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors',
-          mode === 'v2'
-            ? 'bg-stone-900 text-white'
-            : 'text-stone-600 hover:text-stone-900',
-          disabled && 'cursor-not-allowed opacity-50'
-        )}
-      >
-        <Network className="h-3.5 w-3.5" />
-        v2 choreographed
-      </button>
-    </div>
-  );
 }
 
 function DebugToggle({

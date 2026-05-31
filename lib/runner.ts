@@ -54,7 +54,7 @@ interface RunnerSummary {
     iterations: number;
     agentResults: AgentExecutionResult[];
     coordinationMessages: Message[];
-    messageBusStats: any;
+    messageBusStats: ReturnType<MessageBus['getStats']>;
 }
 
 export interface RunnerOptions {
@@ -326,7 +326,7 @@ export class AgentRunner {
         }
 
         // Also check in response messages
-        const messages = (result as any).response?.messages || [];
+        const messages = result.response?.messages ?? [];
         for (const message of messages) {
             if (message.role === 'assistant' && message.content) {
                 for (const item of message.content) {

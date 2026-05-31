@@ -292,7 +292,9 @@ function eventMeta(event: AgentEvent): {
         subline: event.question,
       };
     default: {
-      const _exhaustive: never = event;
+      // Exhaustiveness guard: if a new AgentEvent variant is added without a
+      // case above, TS errors here on the `never` assignment.
+      void (event satisfies never);
       return { tag: 'event', tone: 'border-stone-200 bg-stone-50 text-stone-600', headline: 'event' };
     }
   }

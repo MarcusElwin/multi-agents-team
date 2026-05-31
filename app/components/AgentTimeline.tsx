@@ -1,9 +1,15 @@
 'use client';
 
-import { Bot, Check, Loader2, Wrench, MessageSquare, ArrowRight } from 'lucide-react';
+import { Bot, Check, Loader2, Wrench, MessageSquare, ArrowRight, ListChecks } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import { prettyAgentName } from '@/lib/modes';
 
 export type AgentStatus = 'pending' | 'running' | 'done';
+
+interface PlanStep {
+  agent: string;
+  task: string;
+}
 
 export interface LiveAgent {
   name: string;
@@ -22,14 +28,7 @@ interface AgentTimelineProps {
   currentAgent?: string;
   iteration?: number;
   now: number;
-}
-
-function prettyAgentName(name: string): string {
-  return name
-    .replace(/Agent$/, '')
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/^./, (c) => c.toUpperCase())
-    .trim();
+  plan?: { intent: string; steps: PlanStep[] };
 }
 
 function formatDuration(ms: number): string {
@@ -37,8 +36,8 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function AgentTimeline({ agents, mode, currentAgent, iteration, now }: AgentTimelineProps) {
-  if (agents.length === 0) {
+export function AgentTimeline({ agents, mode, currentAgent, iteration, now, plan }: AgentTimelineProps) {
+  if (agents.length === 0 && !plan) {
     return (
       <div className="flex gap-3 py-4">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-700">
@@ -49,7 +48,7 @@ export function AgentTimeline({ agents, mode, currentAgent, iteration, now }: Ag
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             <span>
               {mode === 'v1'
-                ? 'Coordinator is dispatching specialists…'
+                ? 'Coordinator is planning the workflow…'
                 : 'Agents are coordinating via the message bus…'}
             </span>
           </div>
@@ -78,12 +77,64 @@ export function AgentTimeline({ agents, mode, currentAgent, iteration, now }: Ag
             )}
           </span>
         </div>
-        <div className="space-y-1.5 rounded-2xl border border-stone-200 bg-white p-2">
-          {agents.map((a) => (
-            <AgentRow key={a.name} agent={a} now={now} />
-          ))}
-        </div>
+
+        {plan && <PlanBlock plan={plan} currentAgent={currentAgent} />}
+
+        {agents.length > 0 && (
+          <div className="space-y-1.5 rounded-2xl border border-stone-200 bg-white p-2">
+            {agents.map((a) => (
+              <AgentRow key={a.name} agent={a} now={now} />
+            ))}
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function PlanBlock({
+  plan,
+  currentAgent,
+}: {
+  plan: { intent: string; steps: PlanStep[] };
+  currentAgent?: string;
+}) {
+  // The first not-yet-reached step is the "next step" hint.
+  const currentIdx = plan.steps.findIndex((s) => s.agent === currentAgent);
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
+      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-amber-800">
+        <ListChecks className="h-3.5 w-3.5" />
+        Plan
+      </div>
+      <p className="mb-2 text-[11px] leading-snug text-amber-900/80">{plan.intent}</p>
+      <ol className="space-y-1">
+        {plan.steps.map((s, i) => {
+          const done = currentIdx >= 0 && i < currentIdx;
+          const active = i === currentIdx;
+          return (
+            <li key={`${s.agent}-${i}`} className="flex items-start gap-2 text-[11px]">
+              <span
+                className={cn(
+                  'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold',
+                  done
+                    ? 'bg-green-500 text-white'
+                    : active
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-amber-200 text-amber-700'
+                )}
+              >
+                {done ? <Check className="h-2.5 w-2.5" /> : i + 1}
+              </span>
+              <span className={cn('min-w-0', active ? 'text-amber-900' : 'text-amber-800/80')}>
+                <span className="font-medium">{prettyAgentName(s.agent)}</span>
+                {active && <span className="ml-1 text-amber-600">· now</span>}
+                <span className="text-amber-700/70"> — {s.task.slice(0, 90)}{s.task.length > 90 ? '…' : ''}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }

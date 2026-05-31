@@ -50,6 +50,10 @@ interface ToolResultValue {
     // requestUserInput output (human-in-the-loop)
     requestUserInput?: boolean;
     question?: string;
+    // concrete artifacts produced by specialists
+    draft?: string;
+    findings?: string;
+    sources?: string[];
 }
 
 // Context carried alongside a handoff, stored in message metadata.
@@ -85,6 +89,11 @@ export class AgentOrchestrator {
     private agents: Record<AgentType, { generate(opts: { prompt: string }): Promise<AgentResult> }>;
     private bus: MessageBus = new MessageBus();
     private conversation: Conversation = new Conversation();
+    // Latest concrete artifacts produced by specialists this run. Carried
+    // forward automatically so the next specialist always gets the real draft/
+    // findings, rather than relying on the LLM coordinator to re-copy them into
+    // the delegation context (which weaker models routinely drop).
+    private artifacts: { findings?: string; draft?: string; sources?: string[] } = {};
 
     constructor(options: OrchestratorOptions = {}) {
         const model = options.model;
@@ -136,6 +145,7 @@ export class AgentOrchestrator {
         this.bus = conversation.bus;
         this.conversation = conversation;
         this.bus.clear();
+        this.artifacts = {};
 
         // Subscribe to bus messages so the UI can show inter-agent traffic.
         const busListener = (msg: Message) => {
@@ -232,6 +242,10 @@ export class AgentOrchestrator {
                         stepCount: result.steps.length
                     }
                 });
+
+                // Capture any concrete artifacts this agent produced (draft,
+                // findings, sources) so we can carry them forward automatically.
+                this.captureArtifacts(result);
 
                 // Surface the coordinator's plan to the UI as soon as it analyzes.
                 const plan = this.detectPlan(result);
@@ -432,8 +446,21 @@ export class AgentOrchestrator {
             if (handoffContext?.previousContext) {
                 prompt += `**Context from previous work:**\n${handoffContext.previousContext}\n\n`;
             }
-            
-            prompt += 'Please complete your specialized work on this task.';
+
+            // Carry the real artifacts forward automatically. The coordinator
+            // often summarizes or omits the draft/findings in the delegation
+            // context; the editor/writer need the actual text to work on.
+            if (this.artifacts.findings && targetAgent === 'writerAgent') {
+                prompt += `**Research findings to use:**\n${this.artifacts.findings}\n\n`;
+            }
+            if (this.artifacts.draft && targetAgent === 'editorAgent') {
+                prompt += `**Draft to edit (full text):**\n${this.artifacts.draft}\n\n`;
+            }
+            if (this.artifacts.sources?.length) {
+                prompt += `**Sources:**\n${this.artifacts.sources.slice(0, 8).map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\n`;
+            }
+
+            prompt += 'Please complete your specialized work on this task using the material above.';
         }
         // If coordinator is receiving results from specialist
         else if (targetAgent === 'coordinator') {
@@ -574,6 +601,17 @@ export class AgentOrchestrator {
             if (m.from === 'coordinator' && m.metadata.type === 'agent') lastCoordOutputIdx = i;
         });
         return lastUserIdx > lastCoordOutputIdx && lastUserIdx !== -1;
+    }
+
+    /** Record the latest draft/findings/sources an agent returned. */
+    private captureArtifacts(result: AgentResult): void {
+        this.forEachToolResult(result, (res) => {
+            if (res.draft) this.artifacts.draft = res.draft;
+            if (res.findings) this.artifacts.findings = res.findings;
+            if (Array.isArray(res.sources) && res.sources.length) this.artifacts.sources = res.sources;
+            // The editor's polished output supersedes the draft.
+            if (res.finalContent) this.artifacts.draft = res.finalContent;
+        });
     }
 
     /** Iterate over tool-result payloads in an agent result. */

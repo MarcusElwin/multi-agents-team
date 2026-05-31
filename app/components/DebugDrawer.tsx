@@ -291,6 +291,23 @@ function eventMeta(event: AgentEvent): {
         headline: `${event.agent} needs input`,
         subline: event.question,
       };
+    case 'agent_step':
+      return {
+        tag: 'step',
+        tone: 'border-stone-200 bg-white text-stone-600',
+        headline: `${event.agent} · step ${event.stepIndex + 1}`,
+        subline: event.text || (event.toolNames.length ? `→ ${event.toolNames.join(', ')}` : undefined),
+      };
+    case 'web_search':
+      return {
+        tag: 'search',
+        tone: 'border-teal-200 bg-teal-50 text-teal-700',
+        headline:
+          event.status === 'start'
+            ? `web search: ${event.query}`
+            : `web search done · ${event.sources ?? 0} sources`,
+        subline: event.status === 'start' ? undefined : event.query,
+      };
     default: {
       // Exhaustiveness guard: if a new AgentEvent variant is added without a
       // case above, TS errors here on the `never` assignment.

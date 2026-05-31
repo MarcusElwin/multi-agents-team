@@ -18,6 +18,25 @@ export type AgentEvent =
     }
   | { type: 'tool_call'; agent: string; toolName: string; preview?: string }
   | {
+      // Reasoning text produced at the end of each LLM step, surfaced live so the
+      // UI can show what an agent is thinking during a long-running turn.
+      type: 'agent_step';
+      agent: string;
+      iteration?: number;
+      stepIndex: number;
+      text: string;
+      toolNames: string[];
+    }
+  | {
+      // The researcher's web search tool ran. status 'start' on dispatch,
+      // 'done' when results return (with source count).
+      type: 'web_search';
+      agent: string;
+      status: 'start' | 'done';
+      query: string;
+      sources?: number;
+    }
+  | {
       // The coordinator's planned workflow (from analyzeRequest), surfaced so
       // the UI can show the plan and "next step" while the run proceeds.
       type: 'agent_plan';

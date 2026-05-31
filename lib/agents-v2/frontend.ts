@@ -1,19 +1,12 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
-import { messageBus, Message } from "../message-bus";
+import { MessageBus } from "../message-bus";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 
-// Storage for received messages
-const receivedMessages: Message[] = [];
-
-// Subscribe to messages addressed to this agent
-messageBus.subscribe('frontendAgent', (message: Message) => {
-    console.log(`  📬 Frontend Agent received message from ${message.from}`);
-    receivedMessages.push(message);
-});
-
-export function createFrontendAgent(model: OpenAIModel = DEFAULT_MODEL) {
+// The bus is supplied per-conversation so no state leaks across requests.
+// Inbox reads go through bus.getInbox('frontendAgent', ...).
+export function createFrontendAgent(model: OpenAIModel = DEFAULT_MODEL, bus: MessageBus = new MessageBus()) {
     return new Agent({
     model: openai(model),
     system: `You are the Frontend Agent - an expert in frontend development and visual design.
@@ -63,7 +56,7 @@ export function createFrontendAgent(model: OpenAIModel = DEFAULT_MODEL) {
             }),
             execute: async ({ recipientAgent, messageContent }) => {
                 console.log(`  📡 Sending message to ${recipientAgent}...`);
-                messageBus.publish({
+                bus.publish({
                     from: 'frontendAgent',
                     to: recipientAgent,
                     content: messageContent,
@@ -85,10 +78,7 @@ export function createFrontendAgent(model: OpenAIModel = DEFAULT_MODEL) {
             execute: async ({ fromAgent }) => {
                 console.log('  📖 Reading received messages...');
 
-                let messages = receivedMessages;
-                if (fromAgent) {
-                    messages = receivedMessages.filter(msg => msg.from === fromAgent);
-                }
+                const messages = bus.getInbox('frontendAgent', fromAgent);
 
                 if (messages.length === 0) {
                     return 'No messages received yet.';
@@ -115,5 +105,3 @@ export function createFrontendAgent(model: OpenAIModel = DEFAULT_MODEL) {
 stopWhen: stepCountIs(20)
     });
 }
-
-export const frontendAgent = createFrontendAgent();

@@ -5,10 +5,11 @@ import { config } from 'dotenv';
 // Load .env.local from root directory
 config({ path: resolve(process.cwd(), '.env.local') });
 
-import { backendAgent, createBackendAgent } from './agents-v2/backend';
-import { frontendAgent, createFrontendAgent } from './agents-v2/frontend';
-import { designAgent, createDesignAgent } from './agents-v2/design';
-import { messageBus, Message } from './message-bus';
+import { createBackendAgent } from './agents-v2/backend';
+import { createFrontendAgent } from './agents-v2/frontend';
+import { createDesignAgent } from './agents-v2/design';
+import { MessageBus, Message } from './message-bus';
+import { Conversation } from './conversation';
 import { DEFAULT_MODEL, type OpenAIModel } from './models';
 import type { EventSink } from './agent-events';
 import * as log from './logger';
@@ -16,10 +17,27 @@ import chalk from 'chalk';
 
 type AgentName = 'backendAgent' | 'frontendAgent' | 'designAgent';
 
+// The three v2 agents have structurally different tool enums (each
+// coordinationTool targets the *other* two agents), so they share no single
+// Agent<...> type. We only ever call .generate(), so a minimal structural type
+// is both sufficient and avoids fighting the SDK's deep generics.
+interface V2Agent {
+    generate(opts: { prompt: string }): Promise<AgentResult>;
+}
+
+interface AgentStep {
+    toolCalls?: Array<{ toolName: string; args?: unknown; input?: unknown }>;
+}
+
+interface ResponseMessage {
+    role: string;
+    content?: Array<{ type: string; name?: string }>;
+}
+
 interface AgentResult {
     text: string;
-    steps: any[];
-    response?: any;
+    steps: AgentStep[];
+    response?: { messages?: ResponseMessage[] };
 }
 
 interface AgentExecutionResult {
@@ -44,41 +62,40 @@ export interface RunnerOptions {
 }
 
 export class AgentRunner {
-    private agents: {
-        backendAgent: typeof backendAgent;
-        frontendAgent: typeof frontendAgent;
-        designAgent: typeof designAgent;
-    };
-
+    private model: OpenAIModel;
     private maxIterations = 10;
 
     constructor(options: RunnerOptions = {}) {
-        const model = options.model;
-        if (model && model !== DEFAULT_MODEL) {
-            log.debug(`Runner using custom model: ${model}`);
-            this.agents = {
-                backendAgent: createBackendAgent(model),
-                frontendAgent: createFrontendAgent(model),
-                designAgent: createDesignAgent(model),
-            };
-        } else {
-            this.agents = { backendAgent, frontendAgent, designAgent };
-        }
-        log.debug(`Agent Runner initialized · agents=${Object.keys(this.agents).join(', ')}`);
+        this.model = options.model ?? DEFAULT_MODEL;
+        log.debug(`Agent Runner initialized · model=${this.model}`);
     }
 
     /**
-     * Run all agents with coordination until all mark as completed
+     * Run all agents with coordination until all mark as completed.
+     * The Conversation owns the per-run MessageBus and prior chat history,
+     * so concurrent runs never share state.
      */
-    async runWithCoordination(userQuery: string, onEvent?: EventSink): Promise<RunnerSummary> {
+    async runWithCoordination(
+        userQuery: string,
+        conversation: Conversation = new Conversation(),
+        onEvent?: EventSink,
+    ): Promise<RunnerSummary> {
         log.box('🚀 v2 Choreographed Workflow', 'magenta');
         log.kv({ Query: `"${userQuery.slice(0, 80)}${userQuery.length > 80 ? '…' : ''}"` });
 
         const emit: EventSink = onEvent ?? (() => {});
         const startTime = Date.now();
 
-        // Clear message bus
-        messageBus.clear();
+        const bus = conversation.bus;
+        bus.clear();
+
+        // Build agents bound to THIS conversation's bus. Cast through unknown to
+        // the minimal V2Agent shape (see the type's comment for why).
+        const agents: Record<AgentName, V2Agent> = {
+            backendAgent: createBackendAgent(this.model, bus) as unknown as V2Agent,
+            frontendAgent: createFrontendAgent(this.model, bus) as unknown as V2Agent,
+            designAgent: createDesignAgent(this.model, bus) as unknown as V2Agent,
+        };
 
         const agentNames: AgentName[] = ['backendAgent', 'frontendAgent', 'designAgent'];
 
@@ -92,14 +109,20 @@ export class AgentRunner {
                 content: msg.content,
             });
         };
-        messageBus.on('message', busListener);
+        bus.on('message', busListener);
 
-        // Publish user message to ALL agents
+        // Prior conversation context, injected once per run so agents have memory.
+        const historyBlock = conversation.renderHistory();
+        const queryForAgents = historyBlock
+            ? `Prior conversation:\n${historyBlock}\n\n---\n\nCurrent request:\n${userQuery}`
+            : userQuery;
+
+        // Publish user query (with history) to ALL agents
         agentNames.forEach(agentName => {
-            messageBus.publish({
+            bus.publish({
                 from: 'user',
                 to: agentName,
-                content: userQuery,
+                content: queryForAgents,
                 metadata: {
                     timestamp: new Date(),
                     type: 'user'
@@ -116,7 +139,7 @@ export class AgentRunner {
         emit({
             type: 'workflow_start',
             mode: 'v2',
-            model: DEFAULT_MODEL,
+            model: this.model,
             query: userQuery,
             startingAgent,
         });
@@ -157,7 +180,7 @@ export class AgentRunner {
                 log.iteration(iterations, currentAgent);
                 emit({ type: 'iteration_start', iteration: iterations, agent: currentAgent });
 
-                const result = await this.executeAgent(currentAgent, userQuery, emit);
+                const result = await this.executeAgent(agents[currentAgent], currentAgent, queryForAgents, emit);
                 agentResults.push(result);
 
                 // Update completion status
@@ -180,7 +203,7 @@ export class AgentRunner {
                 });
 
                 // Check coordination messages
-                const sentMessages = messageBus.getMessageHistory()
+                const sentMessages = bus.getMessageHistory()
                     .filter(m => m.from === currentAgent && m.metadata.type === 'agent')
                     .slice(-5);
 
@@ -204,8 +227,8 @@ export class AgentRunner {
                 totalDuration,
                 iterations,
                 agentResults,
-                coordinationMessages: messageBus.getMessageHistory().filter(m => m.metadata.type === 'agent'),
-                messageBusStats: messageBus.getStats()
+                coordinationMessages: bus.getMessageHistory().filter(m => m.metadata.type === 'agent'),
+                messageBusStats: bus.getStats()
             };
 
             this.printSummary(summary, completionStatus);
@@ -227,7 +250,7 @@ export class AgentRunner {
 
             return summary;
         } finally {
-            messageBus.off('message', busListener);
+            bus.off('message', busListener);
         }
     }
 
@@ -235,12 +258,12 @@ export class AgentRunner {
      * Execute a single agent
      */
     private async executeAgent(
+        agent: V2Agent,
         agentName: AgentName,
         userQuery: string,
         emit: EventSink = () => {},
     ): Promise<AgentExecutionResult> {
         const agentStartTime = Date.now();
-        const agent = this.agents[agentName];
 
         try {
             const result: AgentResult = await agent.generate({
@@ -360,29 +383,6 @@ export class AgentRunner {
         console.log();
     }
 
-    /**
-     * Get coordination log
-     */
-    getCoordinationLog(): Message[] {
-        return messageBus.getMessageHistory()
-            .filter(msg => msg.metadata.type === 'agent')
-            .sort((a, b) => a.metadata.timestamp.getTime() - b.metadata.timestamp.getTime());
-    }
-
-    /**
-     * Get message bus stats
-     */
-    getMessageBusStats() {
-        return messageBus.getStats();
-    }
-
-    /**
-     * Reset state
-     */
-    reset(): void {
-        messageBus.clear();
-        log.debug('Agent Runner reset');
-    }
 }
 
 function safeJsonPreview(value: unknown): string | undefined {
@@ -395,17 +395,14 @@ function safeJsonPreview(value: unknown): string | undefined {
     }
 }
 
-// Export singleton instance (default model)
-export const agentRunner = new AgentRunner();
-
-// Export convenience function. Pass a model to override the default for this run.
+// Export convenience function. Pass a model to override the default for this run
+// and a Conversation to carry prior chat history + an isolated message bus.
 export async function runAgentsWithCoordination(
     userQuery: string,
     options: RunnerOptions = {},
     onEvent?: EventSink,
+    conversation: Conversation = new Conversation(),
 ): Promise<RunnerSummary> {
-    const runner = options.model && options.model !== DEFAULT_MODEL
-        ? new AgentRunner(options)
-        : agentRunner;
-    return runner.runWithCoordination(userQuery, onEvent);
+    const runner = new AgentRunner(options);
+    return runner.runWithCoordination(userQuery, conversation, onEvent);
 }

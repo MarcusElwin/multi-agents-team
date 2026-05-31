@@ -5,7 +5,7 @@ import { config } from 'dotenv';
 // Load .env.local from root directory
 config({ path: resolve(process.cwd(), '.env.local') });
 
-import { agentRunner, runAgentsWithCoordination } from '../lib/runner';
+import { runAgentsWithCoordination } from '../lib/runner';
 
 async function testRunner() {
   console.log('\n🧪 TESTING AGENT RUNNER - COORDINATED EXECUTION\n');
@@ -101,9 +101,7 @@ async function testRunner() {
       });
 
       console.log('\n' + '█'.repeat(80) + '\n');
-
-      // Reset for next test
-      agentRunner.reset();
+      // Each run gets a fresh Conversation + bus, so no reset is needed.
 
     } catch (error) {
       console.error('❌ Test failed:', error);

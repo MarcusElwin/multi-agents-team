@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AgentOrchestrator } from '@/lib/orchestrator';
-import { messageBus } from '@/lib/message-bus';
+import { Conversation, type ConversationTurn } from '@/lib/conversation';
 import { resolveModel } from '@/lib/models';
 import type { AgentEvent } from '@/lib/agent-events';
 
@@ -8,13 +8,14 @@ export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  const { message, model } = await req.json();
+  const { message, model, history } = await req.json();
 
   if (!message) {
     return NextResponse.json({ error: 'Message required' }, { status: 400 });
   }
 
   const resolvedModel = resolveModel(model);
+  const priorTurns: ConversationTurn[] = Array.isArray(history) ? history : [];
 
   console.log('\n========================================');
   console.log(`🎬 API REQUEST: v1 workflow · model=${resolvedModel}`);
@@ -43,8 +44,9 @@ export async function POST(req: NextRequest) {
       }, 15_000);
 
       try {
-        const orchestrator = new AgentOrchestrator(messageBus, { model: resolvedModel });
-        await orchestrator.processUserMessage(message, send);
+        const orchestrator = new AgentOrchestrator({ model: resolvedModel });
+        const conversation = new Conversation(priorTurns);
+        await orchestrator.processUserMessage(message, send, conversation);
         // The orchestrator emits its own workflow_complete; don't duplicate it here.
 
         console.log('\n========================================');

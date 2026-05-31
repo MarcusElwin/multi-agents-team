@@ -2,16 +2,32 @@ import {
     coordinatorAgent, researcherAgent, writerAgent, editorAgent,
     createCoordinatorAgent, createResearcherAgent, createWriterAgent, createEditorAgent,
 } from './agents';
-import { MessageBus, messageBus } from './message-bus';
+import { MessageBus } from './message-bus';
+import { Conversation } from './conversation';
 import { DEFAULT_MODEL, type OpenAIModel } from './models';
 import type { EventSink } from './agent-events';
 import * as log from './logger';
 
 type AgentType = 'coordinator' | 'researcherAgent' | 'writerAgent' | 'editorAgent';
 
+interface AgentStep {
+    toolCalls?: Array<{ toolName: string }>;
+}
+
+interface ToolResultItem {
+    type: string;
+    output?: { value?: Record<string, unknown> };
+}
+
+interface ResponseMessage {
+    role: string;
+    content?: ToolResultItem[];
+}
+
 interface AgentResult {
     text: string;
-    steps: any[];
+    steps: AgentStep[];
+    response?: { messages?: ResponseMessage[] };
 }
 
 export interface OrchestratorOptions {
@@ -20,25 +36,35 @@ export interface OrchestratorOptions {
 
 export class AgentOrchestrator {
     private currentAgent: AgentType = 'coordinator';
-    private agents: Record<AgentType, any>;
+    private agents: Record<AgentType, { generate(opts: { prompt: string }): Promise<AgentResult> }>;
+    private bus: MessageBus = new MessageBus();
+    private conversation: Conversation = new Conversation();
 
-    constructor(private bus: MessageBus = messageBus, options: OrchestratorOptions = {}) {
+    constructor(options: OrchestratorOptions = {}) {
         const model = options.model;
+        // Agents only expose .generate() to us; the SDK's Agent type is richer,
+        // so cast through unknown to the minimal shape we consume.
+        const asAgents = (a: {
+            coordinator: unknown;
+            researcherAgent: unknown;
+            writerAgent: unknown;
+            editorAgent: unknown;
+        }) => a as unknown as typeof this.agents;
         if (model && model !== DEFAULT_MODEL) {
             log.debug(`Orchestrator using custom model: ${model}`);
-            this.agents = {
+            this.agents = asAgents({
                 coordinator: createCoordinatorAgent(model),
                 researcherAgent: createResearcherAgent(model),
                 writerAgent: createWriterAgent(model),
                 editorAgent: createEditorAgent(model),
-            };
+            });
         } else {
-            this.agents = {
+            this.agents = asAgents({
                 coordinator: coordinatorAgent,
                 researcherAgent: researcherAgent,
                 writerAgent: writerAgent,
                 editorAgent: editorAgent,
-            };
+            });
         }
         log.debug('Agent Orchestrator initialized');
     }
@@ -47,12 +73,23 @@ export class AgentOrchestrator {
         return this.agents[agentType];
     }
 
-    async processUserMessage(userMessage: string, onEvent?: EventSink): Promise<string> {
+    async processUserMessage(
+        userMessage: string,
+        onEvent?: EventSink,
+        conversation: Conversation = new Conversation(),
+    ): Promise<string> {
         log.box('🚀 v1 Orchestrated Workflow', 'cyan');
         log.kv({ User: `"${userMessage.slice(0, 80)}${userMessage.length > 80 ? '…' : ''}"` });
 
         const emit: EventSink = onEvent ?? (() => {});
         emit({ type: 'workflow_start', mode: 'v1', model: DEFAULT_MODEL, query: userMessage, startingAgent: 'coordinator' });
+
+        // Use this conversation's isolated bus, and start from a clean slate so a
+        // prior run's messages can't leak into prompt building (which previously
+        // made the coordinator respond about a non-existent workflow).
+        this.bus = conversation.bus;
+        this.conversation = conversation;
+        this.bus.clear();
 
         // Subscribe to bus messages so the UI can show inter-agent traffic.
         const busListener = (msg: any) => {
@@ -119,8 +156,7 @@ export class AgentOrchestrator {
 
                 // Log tool calls
                 const toolCalls = result.steps
-                    .filter(step => step.toolCalls && step.toolCalls.length > 0)
-                    .flatMap(step => step.toolCalls);
+                    .flatMap(step => step.toolCalls ?? []);
 
                 for (const tc of toolCalls) {
                     log.tool(tc.toolName);
@@ -276,7 +312,10 @@ export class AgentOrchestrator {
     
         // If this is the coordinator with initial user message
         if (targetAgent === 'coordinator' && lastUserMessage && messagesFromAgent.length === 0) {
-            prompt = lastUserMessage.content;
+            const historyBlock = this.conversation.renderHistory();
+            prompt = historyBlock
+                ? `Prior conversation:\n${historyBlock}\n\n---\n\nCurrent request:\n${lastUserMessage.content}`
+                : lastUserMessage.content;
         }
         // If this is a handoff from coordinator to specialist
         else if (lastHandoff && targetAgent !== 'coordinator') {
@@ -491,6 +530,11 @@ export class AgentOrchestrator {
 
     getMessageHistory() {
         return this.bus.getMessageHistory();
+    }
+
+    /** Stats for the most recent run's bus (used by dev test scripts). */
+    getStats() {
+        return this.bus.getStats();
     }
 
     getConversationSummary() {

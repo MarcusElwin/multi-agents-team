@@ -18,6 +18,22 @@ export type AgentEvent =
     }
   | { type: 'tool_call'; agent: string; toolName: string; preview?: string }
   | {
+      // The coordinator's planned workflow (from analyzeRequest), surfaced so
+      // the UI can show the plan and "next step" while the run proceeds.
+      type: 'agent_plan';
+      agent: string;
+      intent: string;
+      steps: Array<{ agent: string; task: string }>;
+    }
+  | {
+      // An agent is requesting input from the human before it can continue.
+      // The run pauses until the client POSTs an input_response with this id.
+      type: 'input_request';
+      requestId: string;
+      agent: string;
+      question: string;
+    }
+  | {
       type: 'bus_message';
       from: string;
       to: string;

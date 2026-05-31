@@ -277,6 +277,20 @@ function eventMeta(event: AgentEvent): {
         headline: 'workflow error',
         subline: event.error,
       };
+    case 'agent_plan':
+      return {
+        tag: 'plan',
+        tone: 'border-amber-200 bg-amber-50 text-amber-700',
+        headline: `${event.agent} planned ${event.steps.length} step(s)`,
+        subline: event.steps.map((s) => s.agent).join(' → ') || event.intent,
+      };
+    case 'input_request':
+      return {
+        tag: 'input',
+        tone: 'border-sky-200 bg-sky-50 text-sky-700',
+        headline: `${event.agent} needs input`,
+        subline: event.question,
+      };
     default: {
       const _exhaustive: never = event;
       return { tag: 'event', tone: 'border-stone-200 bg-stone-50 text-stone-600', headline: 'event' };

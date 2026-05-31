@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runAgentsWithCoordination } from '@/lib/runner';
-import { messageBus } from '@/lib/message-bus';
+import { Conversation, type ConversationTurn } from '@/lib/conversation';
 import { resolveModel } from '@/lib/models';
 import type { AgentEvent } from '@/lib/agent-events';
 
@@ -8,13 +8,14 @@ export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  const { message, model } = await req.json();
+  const { message, model, history } = await req.json();
 
   if (!message) {
     return NextResponse.json({ error: 'Message required' }, { status: 400 });
   }
 
   const resolvedModel = resolveModel(model);
+  const priorTurns: ConversationTurn[] = Array.isArray(history) ? history : [];
 
   console.log('\n========================================');
   console.log(`🎬 API REQUEST: v2 workflow · model=${resolvedModel}`);
@@ -44,7 +45,8 @@ export async function POST(req: NextRequest) {
       }, 15_000);
 
       try {
-        await runAgentsWithCoordination(message, { model: resolvedModel }, send);
+        const conversation = new Conversation(priorTurns);
+        await runAgentsWithCoordination(message, { model: resolvedModel }, send, conversation);
         // The runner emits its own workflow_complete; don't duplicate it here.
 
         console.log('\n========================================');
@@ -81,7 +83,5 @@ export async function GET() {
     status: 'ready',
     pattern: 'choreography (peer-to-peer, round-robin)',
     agents: ['backendAgent', 'frontendAgent', 'designAgent'],
-    messageBusActive: true,
-    currentBusStats: messageBus.getStats(),
   });
 }

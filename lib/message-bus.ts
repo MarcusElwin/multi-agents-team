@@ -41,6 +41,10 @@ function canonicalizeAgentName(name: string): string {
 
 export class MessageBus extends EventEmitter {
     private messages: Message[] = [];
+    // Per-recipient inboxes, maintained automatically on publish. This replaces
+    // the per-agent module-level `receivedMessages` arrays the v2 agents used to
+    // keep, which leaked across requests because they were never cleared.
+    private inboxes = new Map<string, Message[]>();
 
     constructor() {
         super();
@@ -58,6 +62,10 @@ export class MessageBus extends EventEmitter {
         };
         this.messages.push(msgWithId);
 
+        const inbox = this.inboxes.get(canonicalTo);
+        if (inbox) inbox.push(msgWithId);
+        else this.inboxes.set(canonicalTo, [msgWithId]);
+
         log.message(msgWithId.from, msgWithId.to, msgWithId.metadata.type, msgWithId.content);
 
         this.emit('message', msgWithId);
@@ -69,6 +77,14 @@ export class MessageBus extends EventEmitter {
     subscribe(agentId: string, callback: (message: Message) => void) {
         this.on(`message:${agentId}`, callback);
         log.debug(`Agent ${agentId} subscribed`);
+    }
+
+    /** Messages addressed to a given agent, optionally filtered by sender. */
+    getInbox(agentId: string, fromAgent?: string): Message[] {
+        const inbox = this.inboxes.get(canonicalizeAgentName(agentId)) ?? [];
+        if (!fromAgent) return inbox;
+        const from = canonicalizeAgentName(fromAgent);
+        return inbox.filter((m) => m.from === from);
     }
 
     // Updated to support optional filtering
@@ -87,6 +103,7 @@ export class MessageBus extends EventEmitter {
 
     clear() {
         this.messages = [];
+        this.inboxes.clear();
         log.debug('Message bus cleared');
     }
 

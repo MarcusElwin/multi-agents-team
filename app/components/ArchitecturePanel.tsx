@@ -61,7 +61,7 @@ export function ArchitecturePanel({
         <div className={cn('px-5 pb-5', collapsible ? 'pt-0' : 'pt-1')}>
           <p className="mb-5 text-xs leading-relaxed text-stone-500">{spec.description}</p>
 
-          {mode === 'v1' ? <OrchestratedDiagram /> : <ChoreographedDiagram />}
+          {mode === 'v1' ? <OrchestratedDiagram /> : mode === 'v3' ? <HierarchicalDiagram /> : <ChoreographedDiagram />}
 
           <div className="mt-5 space-y-2 border-t border-stone-100 pt-4">
             {spec.agents.map((a) => (
@@ -127,6 +127,28 @@ function ChoreographedDiagram() {
         shared message bus
       </div>
       <p className="text-[10px] text-stone-400">peers exchange specs directly · no central coordinator</p>
+    </div>
+  );
+}
+
+function HierarchicalDiagram() {
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <Node label="Lead" tone="lead" />
+      <ArrowRight className="h-4 w-4 rotate-90 text-stone-300" />
+      <div className="flex flex-wrap items-start justify-center gap-4">
+        {['Research lead', 'Build lead'].map((sub) => (
+          <div key={sub} className="flex flex-col items-center gap-1.5">
+            <Node label={sub} />
+            <ArrowRight className="h-3 w-3 rotate-90 text-stone-300" />
+            <div className="flex gap-1">
+              <Node label="sub" />
+              <Node label="sub" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="text-[10px] text-stone-400">lead spawns sub-agents at runtime · children run in parallel · depth-capped</p>
     </div>
   );
 }

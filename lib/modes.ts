@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
-import { Workflow, Network } from 'lucide-react';
+import { Workflow, Network, GitBranch } from 'lucide-react';
 
-export type Mode = 'v1' | 'v2';
+export type Mode = 'v1' | 'v2' | 'v3';
 
 export interface AgentSpec {
   /** Canonical agent id used on the bus / in events. */
@@ -81,9 +81,30 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     durationHint: 'up to ~5 min',
   },
+  v3: {
+    value: 'v3',
+    label: 'v3 hierarchical',
+    pattern: 'Hierarchical',
+    icon: GitBranch,
+    tagline: 'a lead spawns sub-agents on the fly',
+    description:
+      'A lead agent decomposes the task at runtime, spawning sub-agents for each part — and those sub-agents can spawn their own, forming a tree (depth-capped). Children run in parallel; each parent synthesizes its children\'s results up to a final answer. Best for open-ended tasks that break into nested subtasks.',
+    endpoint: '/api/agents-v3',
+    agents: [
+      { id: 'lead', name: 'Lead', role: 'Decomposes the task and synthesizes results' },
+      { id: 'subagent', name: 'Sub-agent', role: 'Spawned dynamically with an invented role' },
+    ],
+    suggestions: [
+      'Plan and build a habit-tracker app: research best practices, then design the data model, API, and a UI component',
+      'Research the top 3 vector databases and produce a comparison table plus a recommendation',
+      'Break down launching a developer newsletter into research, content, and growth subtasks',
+      'Design a URL shortener: split into API design, storage, and a self-contained React stats UI',
+    ],
+    durationHint: 'up to ~5 min',
+  },
 };
 
-export const MODE_LIST: ModeSpec[] = [MODES.v1, MODES.v2];
+export const MODE_LIST: ModeSpec[] = [MODES.v1, MODES.v2, MODES.v3];
 
 /** Pretty-print an agent id like "writerAgent" → "Writer". */
 export function prettyAgentName(id: string): string {

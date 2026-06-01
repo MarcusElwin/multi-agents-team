@@ -1,7 +1,7 @@
 export type AgentEvent =
   | {
       type: 'workflow_start';
-      mode: 'v1' | 'v2';
+      mode: 'v1' | 'v2' | 'v3';
       model: string;
       query: string;
       startingAgent?: string;
@@ -57,6 +57,16 @@ export type AgentEvent =
       question: string;
     }
   | {
+      // v3 hierarchical: a node was spawned in the agent tree. parentId is null
+      // for the root lead. Lets the UI build the tree live as agents appear.
+      type: 'agent_spawn';
+      id: string;
+      parentId: string | null;
+      role: string;
+      task: string;
+      depth: number;
+    }
+  | {
       type: 'bus_message';
       from: string;
       to: string;
@@ -66,7 +76,7 @@ export type AgentEvent =
   | { type: 'handoff'; from: string; to: string }
   | {
       type: 'workflow_complete';
-      mode: 'v1' | 'v2';
+      mode: 'v1' | 'v2' | 'v3';
       result?: string;
       agentResults?: Array<{
         agent: string;

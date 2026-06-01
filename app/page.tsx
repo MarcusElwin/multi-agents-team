@@ -9,6 +9,7 @@ import { MarkdownContent } from './components/MarkdownContent';
 import { ModelSelector } from './components/ModelSelector';
 import { ModeSelector } from './components/ModeSelector';
 import { AgentTimeline, type LiveAgent } from './components/AgentTimeline';
+import { AgentTree, type TreeNode } from './components/AgentTree';
 import { ArchitecturePanel } from './components/ArchitecturePanel';
 import { InputRequestCard } from './components/InputRequestCard';
 import { DebugDrawer } from './components/DebugDrawer';
@@ -43,10 +44,13 @@ interface LiveRun {
   pendingInput?: PendingInput;
   // Running totals accumulated from iteration_end events.
   costUsd: number;
+  // v3 hierarchical tree, built from agent_spawn events.
+  tree: Map<string, TreeNode>;
+  treeRootId: string | null;
 }
 
 function emptyRun(): LiveRun {
-  return { agents: new Map(), events: [], costUsd: 0 };
+  return { agents: new Map(), events: [], costUsd: 0, tree: new Map(), treeRootId: null };
 }
 
 export default function Home() {
@@ -191,6 +195,44 @@ export default function Home() {
           costUsd: (existing?.costUsd ?? 0) + (event.costUsd ?? 0),
         });
         next.costUsd += event.costUsd ?? 0;
+        // v3: mark the most recent running tree node of this role as done.
+        if (next.tree.size > 0) {
+          let target: TreeNode | undefined;
+          for (const n of next.tree.values()) {
+            if (n.role === event.agent && n.status === 'running') target = n; // last wins
+          }
+          if (target) {
+            next.tree = new Map(next.tree);
+            next.tree.set(target.id, {
+              ...target,
+              status: 'done',
+              durationMs: (target.durationMs ?? 0) + event.durationMs,
+              costUsd: (target.costUsd ?? 0) + (event.costUsd ?? 0),
+              outputPreview: event.outputPreview || target.outputPreview,
+            });
+          }
+        }
+        break;
+      }
+      case 'agent_spawn': {
+        next.tree = new Map(next.tree);
+        next.tree.set(event.id, {
+          id: event.id,
+          parentId: event.parentId,
+          role: event.role,
+          task: event.task,
+          depth: event.depth,
+          status: 'running',
+          childIds: [],
+        });
+        if (event.parentId === null) {
+          next.treeRootId = event.id;
+        } else {
+          const parent = next.tree.get(event.parentId);
+          if (parent && !parent.childIds.includes(event.id)) {
+            next.tree.set(event.parentId, { ...parent, childIds: [...parent.childIds, event.id] });
+          }
+        }
         break;
       }
       case 'tool_call': {
@@ -506,17 +548,20 @@ export default function Home() {
                     onViewCode={openCodePreview}
                   />
                 ))}
-                {isLoading && (
-                  <AgentTimeline
-                    agents={liveAgents}
-                    mode={mode}
-                    currentAgent={live.currentAgent}
-                    iteration={live.iteration}
-                    now={now}
-                    plan={live.plan}
-                    costUsd={live.costUsd}
-                  />
-                )}
+                {isLoading &&
+                  (mode === 'v3' ? (
+                    <AgentTree nodes={live.tree} rootId={live.treeRootId} costUsd={live.costUsd} />
+                  ) : (
+                    <AgentTimeline
+                      agents={liveAgents}
+                      mode={mode}
+                      currentAgent={live.currentAgent}
+                      iteration={live.iteration}
+                      now={now}
+                      plan={live.plan}
+                      costUsd={live.costUsd}
+                    />
+                  ))}
                 {live.pendingInput && (
                   <InputRequestCard
                     agent={live.pendingInput.agent}
@@ -572,13 +617,14 @@ function buildAssistantMessage(
     };
   }
 
-  if (finalEvent.mode === 'v1') {
+  // v1 and v3 both deliver a single synthesized `result` markdown blob.
+  if (finalEvent.mode === 'v1' || finalEvent.mode === 'v3') {
     return {
       id: crypto.randomUUID(),
       role: 'assistant',
       content: finalEvent.result ?? '_(empty response)_',
       meta: {
-        mode: 'v1',
+        mode: finalEvent.mode,
         model,
         agentsUsed: finalEvent.agentsUsed,
         iterations: finalEvent.iterations,
@@ -819,10 +865,12 @@ function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
           'rounded-full border px-2 py-0.5 font-medium',
           meta.mode === 'v1'
             ? 'border-blue-200 bg-blue-50 text-blue-700'
-            : 'border-purple-200 bg-purple-50 text-purple-700'
+            : meta.mode === 'v3'
+              ? 'border-yellow-200 bg-yellow-50 text-yellow-700'
+              : 'border-purple-200 bg-purple-50 text-purple-700'
         )}
       >
-        {meta.mode === 'v1' ? 'orchestrated' : 'choreographed'}
+        {meta.mode === 'v1' ? 'orchestrated' : meta.mode === 'v3' ? 'hierarchical' : 'choreographed'}
       </span>
       {meta.model && (
         <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 font-mono text-stone-600">
@@ -831,7 +879,7 @@ function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
       )}
       {meta.iterations !== undefined && (
         <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-600">
-          {meta.mode === 'v1' ? `${meta.iterations} msgs` : `${meta.iterations} iter`}
+          {meta.mode === 'v1' ? `${meta.iterations} msgs` : meta.mode === 'v3' ? `${meta.iterations} agents` : `${meta.iterations} iter`}
         </span>
       )}
       {meta.totalDuration !== undefined && (

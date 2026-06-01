@@ -92,6 +92,10 @@ export type AgentEvent =
       totalInputTokens?: number;
       totalOutputTokens?: number;
       totalCostUsd?: number;
+      // A structured report deliverable (v3 synthesis), rendered as <ReportView>.
+      // Typed as unknown here to keep agent-events free of tool/zod imports; the
+      // UI treats it as a ReportSpec.
+      report?: unknown;
     }
   | { type: 'workflow_error'; error: string };
 

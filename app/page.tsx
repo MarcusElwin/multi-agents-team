@@ -15,7 +15,9 @@ import { InputRequestCard } from './components/InputRequestCard';
 import { DebugDrawer } from './components/DebugDrawer';
 import { ChatSidebar } from './components/ChatSidebar';
 import { BuildPlan } from './components/BuildPlan';
+import { ReportView } from './components/ReportView';
 import { CodePreview } from './components/CodePreview';
+import type { ReportSpec } from '@/lib/tools/report';
 import { extractCodeBlocks, type CodeBlock } from '@/lib/utils/extract-code';
 import { useConversations, type StoredMessage } from './hooks/useConversations';
 import type { AgentEvent } from '@/lib/agent-events';
@@ -633,6 +635,7 @@ function buildAssistantMessage(
         iterations: finalEvent.iterations,
         totalCostUsd: finalEvent.totalCostUsd,
         totalTokens: (finalEvent.totalInputTokens ?? 0) + (finalEvent.totalOutputTokens ?? 0),
+        report: finalEvent.report as ReportSpec | undefined,
       },
     };
   }
@@ -779,6 +782,9 @@ function MessageRow({
   // v2 assistant turns render as a BuildPlan board instead of a markdown bubble.
   const isBuildPlan =
     !isUser && message.meta?.mode === 'v2' && (message.meta.perAgent?.length ?? 0) > 0;
+  // A structured report (e.g. v3 synthesis) renders as a ReportView card.
+  const report = !isUser ? (message.meta?.report as ReportSpec | undefined) : undefined;
+  const isWide = isBuildPlan || Boolean(report);
   const isLongReport =
     !isUser && !isBuildPlan && message.content.length > REPORT_COLLAPSE_THRESHOLD;
   // Long reports start collapsed; short ones and user messages always show full.
@@ -804,11 +810,13 @@ function MessageRow({
       </div>
       <div
         className={cn(
-          isBuildPlan ? 'min-w-0 flex-1 space-y-2' : 'max-w-[85%] space-y-2',
+          isWide ? 'min-w-0 flex-1 space-y-2' : 'max-w-[85%] space-y-2',
           isUser && 'flex flex-col items-end'
         )}
       >
-        {isBuildPlan ? (
+        {report ? (
+          <ReportView report={report} />
+        ) : isBuildPlan ? (
           <BuildPlan
             goal={prevUserMessage}
             agents={message.meta!.perAgent!}

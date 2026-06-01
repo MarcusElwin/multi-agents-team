@@ -16,7 +16,9 @@ import { DebugDrawer } from '@/app/components/DebugDrawer';
 import { ChatSidebar } from '@/app/components/ChatSidebar';
 import { BuildPlan } from '@/app/components/BuildPlan';
 import { StrategyView } from '@/app/components/StrategyViews';
+import { ReportView } from '@/app/components/ReportView';
 import { CodePreview } from '@/app/components/CodePreview';
+import type { ReportSpec } from '@/lib/tools/report';
 import { SettingsDrawer } from '@/app/components/SettingsDrawer';
 import { extractCodeBlocks, type CodeBlock } from '@/lib/utils/extract-code';
 import { useConversations, type StoredMessage } from '@/app/hooks/useConversations';
@@ -721,6 +723,7 @@ function buildAssistantMessage(
         totalCostUsd: finalEvent.totalCostUsd,
         totalTokens: (finalEvent.totalInputTokens ?? 0) + (finalEvent.totalOutputTokens ?? 0),
         summary: finalEvent.summary,
+        report: finalEvent.report as ReportSpec | undefined,
       },
     };
   }
@@ -869,7 +872,9 @@ function MessageRow({
     !isUser && message.meta?.mode === 'v2' && (message.meta.perAgent?.length ?? 0) > 0;
   // v4–v7 attach a pattern-specific summary rendered as a bespoke card.
   const strategySummary = !isUser ? message.meta?.summary : undefined;
-  const isWide = isBuildPlan || Boolean(strategySummary);
+  // A structured report (report tool) renders as a ReportView card.
+  const report = !isUser ? (message.meta?.report as ReportSpec | undefined) : undefined;
+  const isWide = isBuildPlan || Boolean(strategySummary) || Boolean(report);
   const isLongReport =
     !isUser && !isBuildPlan && message.content.length > REPORT_COLLAPSE_THRESHOLD;
   // Long reports start collapsed; short ones and user messages always show full.
@@ -902,6 +907,8 @@ function MessageRow({
         {/* v4–v7: bespoke summary card (score ladder / debate / blackboard /
             auction), shown above the synthesized markdown result below. */}
         {strategySummary && <StrategyView summary={strategySummary} />}
+        {/* Report tool: a structured report card above the result. */}
+        {report && <ReportView report={report} />}
 
         {isBuildPlan ? (
           <BuildPlan

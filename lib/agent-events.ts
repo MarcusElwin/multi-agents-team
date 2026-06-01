@@ -145,6 +145,10 @@ export type AgentEvent =
       // (v4 score ladder, v5 debate, v6 blackboard, v7 auction). Persists in the
       // message so the rich view survives reload.
       summary?: RunSummary;
+      // A structured report deliverable (e.g. v3 synthesis), rendered as
+      // <ReportView>. Typed as unknown here to keep agent-events free of
+      // tool/zod imports; the UI treats it as a ReportSpec.
+      report?: unknown;
     }
   | { type: 'workflow_error'; error: string };
 

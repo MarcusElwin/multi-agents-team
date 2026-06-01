@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Mode } from '@/lib/modes';
 import type { RunSummary } from '@/lib/agent-events';
+import type { ReportSpec } from '@/lib/tools/report';
 
 /**
  * A single user/assistant message as persisted in a stored conversation. Mirrors
@@ -27,6 +28,8 @@ export interface StoredMessage {
     // For v4–v7: a pattern-specific summary rendered as a bespoke card above the
     // markdown result (score ladder, debate, blackboard, auction).
     summary?: RunSummary;
+    // A structured report rendered with <ReportView> above the markdown.
+    report?: ReportSpec;
   };
 }
 

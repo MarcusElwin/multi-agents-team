@@ -3,6 +3,7 @@ import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel, type Provide
 import { withProvider } from "./provider";
 import type { AgentEvent, EventSink } from "./agent-events";
 import { createNodeAgent } from "./agents-v3/node-agent";
+import type { ReportSpec } from "./tools/report";
 import * as log from "./logger";
 
 const MAX_DEPTH = 2; // root = 0; nodes at MAX_DEPTH cannot spawn (leaves)
@@ -34,6 +35,7 @@ interface SpawnRequest {
 
 export interface HierarchicalResult {
   finalOutput: string;
+  report?: ReportSpec;
   totalDuration: number;
   nodeCount: number;
   totalInputTokens: number;
@@ -84,6 +86,8 @@ export class HierarchicalRunner {
   private totalIn = 0;
   private totalOut = 0;
   private totalCost = 0;
+  // A rich report emitted by the root's synthesis pass, if any.
+  private rootReport: ReportSpec | undefined;
 
   constructor(options: HierarchicalOptions = {}) {
     this.model = options.model ?? DEFAULT_MODEL;
@@ -102,6 +106,7 @@ export class HierarchicalRunner {
     this.totalIn = 0;
     this.totalOut = 0;
     this.totalCost = 0;
+    this.rootReport = undefined;
 
     log.box("🌳 v3 Hierarchical Workflow", "yellow");
     log.kv({ Query: `"${userQuery.slice(0, 80)}${userQuery.length > 80 ? "…" : ""}"` });
@@ -135,10 +140,12 @@ export class HierarchicalRunner {
       totalInputTokens: this.totalIn,
       totalOutputTokens: this.totalOut,
       totalCostUsd: this.totalCost,
+      report: this.rootReport,
     });
 
     return {
       finalOutput,
+      report: this.rootReport,
       totalDuration,
       nodeCount: this.nodeCount,
       totalInputTokens: this.totalIn,
@@ -239,6 +246,8 @@ export class HierarchicalRunner {
       depth: node.depth,
       canSpawn: false, // synthesis never spawns again
       maxChildren: MAX_CHILDREN,
+      // Only the root synthesis may emit a rich report (the final deliverable).
+      canReport: node.depth === 0,
       model: this.model,
       hooks: {
         onStep: ({ stepIndex, text, toolNames }) =>
@@ -256,16 +265,23 @@ export class HierarchicalRunner {
       `Integrate the parts, resolve overlaps, and call finalize with the combined result.`;
 
     const synth = await synthAgent.generate({ prompt: synthPrompt });
-    const { deliverable: synthDeliverable } = this.parseResult(synth);
+    const { deliverable: synthDeliverable, report } = this.parseResult(synth);
+    // Capture a root-level report so the run can render it natively.
+    if (node.depth === 0 && report) this.rootReport = report;
     this.account(synth, node.role, this.nodeCount, Date.now() - synthStart, synthDeliverable, true);
 
     return synthDeliverable || synth.text;
   }
 
-  /** Extract spawn requests and the finalize deliverable from a node's result. */
-  private parseResult(result: AgentResult): { spawns: SpawnRequest[]; deliverable: string } {
+  /** Extract spawn requests, the finalize deliverable, and any report. */
+  private parseResult(result: AgentResult): {
+    spawns: SpawnRequest[];
+    deliverable: string;
+    report?: ReportSpec;
+  } {
     const spawns: SpawnRequest[] = [];
     let deliverable = "";
+    let report: ReportSpec | undefined;
     forEachToolResult(result, (v) => {
       if (v.spawn && typeof v.role === "string" && typeof v.task === "string") {
         spawns.push({ role: v.role, task: v.task });
@@ -273,8 +289,11 @@ export class HierarchicalRunner {
       if (v.finalized && typeof v.deliverable === "string") {
         deliverable = v.deliverable;
       }
+      if (v.report && typeof v.report === "object") {
+        report = v.report as ReportSpec;
+      }
     });
-    return { spawns, deliverable };
+    return { spawns, deliverable, report };
   }
 
   /** Tally tokens/cost and emit iteration_end for a completed node pass. */

@@ -132,7 +132,7 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     suggestions: [
       'Plan and build a habit-tracker app: research best practices, then design the data model, API, and a UI component',
-      'Research the top 3 vector databases and produce a comparison table plus a recommendation',
+      'Research the top 3 vector databases and produce a visual report with a comparison table, KPIs, and a chart',
       'Break down launching a developer newsletter into research, content, and growth subtasks',
       'Design a URL shortener: split into API design, storage, and a self-contained React stats UI',
     ],

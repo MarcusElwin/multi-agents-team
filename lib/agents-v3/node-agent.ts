@@ -5,6 +5,7 @@ import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 import { type AgentHooks } from "../agent-events";
 import { makeStepHook } from "../agents/researcher-agent";
 import { makeWebSearchTool, needsWebSearch } from "../tools/web-search";
+import { makeReportTool } from "../tools/report";
 
 /**
  * A single node in the v3 hierarchy. Every node runs the SAME agent definition,
@@ -27,10 +28,12 @@ export function createNodeAgent(opts: {
   canSpawn: boolean;
   maxChildren: number;
   isRoot?: boolean;
+  /** When true, expose generateReport so the deliverable can be a rich report. */
+  canReport?: boolean;
   model?: OpenAIModel;
   hooks?: AgentHooks;
 }) {
-  const { role, task, canSpawn, maxChildren, isRoot = false, model = DEFAULT_MODEL, hooks = {} } = opts;
+  const { role, task, canSpawn, maxChildren, isRoot = false, canReport = false, model = DEFAULT_MODEL, hooks = {} } = opts;
 
   // Give research-y nodes the real web-search tool; others reason from prompt.
   const webSearchEnabled = needsWebSearch(`${role} ${task}`);
@@ -80,6 +83,7 @@ export function createNodeAgent(opts: {
   });
 
   const webSearch = makeWebSearchTool(model, hooks);
+  const generateReport = makeReportTool();
 
   // Two full literals (no optional keys) keep the ToolSet types clean — a
   // conditional `...(cond ? {x} : {})` spread infers `x?: undefined`, which
@@ -91,10 +95,16 @@ export function createNodeAgent(opts: {
       ? `You have a webSearch tool — USE IT to ground your work in real, current, sourced ` +
         `information rather than guessing. Cite what you find.\n\n`
       : ``) +
+    (canReport
+      ? `You may produce a rich visual report instead of plain prose: call generateReport ` +
+        `with KPIs, charts (with real numbers from the sub-agents' work), tables, and ` +
+        `sections. Prefer generateReport when the content has data worth visualizing; ` +
+        `otherwise call finalize with markdown.\n\n`
+      : ``) +
     `RULES:\n` +
     `- Be concrete and useful. Produce real content (specs, code, analysis), not meta-talk.\n` +
     `- If you spawn children, do it in ONE batch of spawnSubAgent calls, then stop and wait.\n` +
-    `- Always end by calling finalize exactly once with your deliverable.`;
+    `- Always end by calling finalize (or generateReport) exactly once with your deliverable.`;
 
   const common = {
     model: provider()(model),
@@ -103,8 +113,12 @@ export function createNodeAgent(opts: {
     onStepFinish: makeStepHook(hooks),
   };
 
-  // At the depth cap the system prompt tells the node NOT to spawn; the runner
-  // also ignores any spawn results past MAX_DEPTH as a hard backstop.
+  // Distinct full literals per tool combination (keeps the ToolSet types clean).
+  // At the depth cap the prompt tells the node NOT to spawn; the runner also
+  // ignores spawn results past MAX_DEPTH as a hard backstop.
+  if (canReport) {
+    return new Agent({ ...common, tools: { spawnSubAgent, finalize, generateReport } });
+  }
   return webSearchEnabled
     ? new Agent({ ...common, tools: { spawnSubAgent, finalize, webSearch } })
     : new Agent({ ...common, tools: { spawnSubAgent, finalize } });

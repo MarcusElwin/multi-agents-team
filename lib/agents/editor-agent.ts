@@ -4,6 +4,7 @@ import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 import { type AgentHooks } from "../agent-events";
 import { makeStepHook } from "./researcher-agent";
+import * as log from "../logger";
 
 export function createEditorAgent(model: OpenAIModel = DEFAULT_MODEL, hooks: AgentHooks = {}) {
     return new Agent({
@@ -44,8 +45,7 @@ When editing is complete:
                     .describe('Quality criteria to check')
             }),
             execute: async ({ content, criteria }) => {
-                console.log('  📝 Assessing quality...');
-                console.log(`  📊 Criteria: ${criteria.join(', ')}`);
+                log.detail('📊 assessing', criteria.join(', '));
                 
                 // Mock quality assessment - in real scenario, could use additional LLM call
                 const wordCount = content.split(/\s+/).length;
@@ -77,9 +77,7 @@ When editing is complete:
                     .describe('Overall quality score (1-10)'),
             }),
             execute: async ({ finalContent, improvements, qualityScore }) => {
-                console.log('  ↩️  Returning to coordinator');
-                console.log('  ✅ Editing complete');
-                console.log(`  📊 Quality score: ${qualityScore || 'N/A'}`);
+                log.complete('editing complete', `quality: ${qualityScore ?? 'N/A'} · ${finalContent.length} chars`);
                 
                 return {
                     done: true,

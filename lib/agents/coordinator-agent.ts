@@ -4,6 +4,7 @@ import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 import { type AgentHooks } from "../agent-events";
 import { makeStepHook } from "./researcher-agent";
+import * as log from "../logger";
 
 export function createCoordinatorAgent(model: OpenAIModel = DEFAULT_MODEL, hooks: AgentHooks = {}) {
     return new Agent({
@@ -85,16 +86,16 @@ export function createCoordinatorAgent(model: OpenAIModel = DEFAULT_MODEL, hooks
             }),
 
             execute: async ({ userIntent, selectedAgents, reasoning }) => {
-                console.log('  🔍 Coordinator Analysis:');
-                console.log(`     User Intent: ${userIntent}`);
-                console.log(`     Reasoning: ${reasoning}`);
-                console.log('     Planned Workflow:');
+                log.complete('🔍 coordinator analysis');
+                log.detail('intent', userIntent);
+                log.detail('reasoning', reasoning);
 
                 // Sort agents by order
                 const sortedAgents = selectedAgents.sort((a, b) => a.order - b.order);
 
+                log.detail('plan', sortedAgents.map((a) => a.agent).join(' → '));
                 sortedAgents.forEach((a, i) => {
-                    console.log(`       ${i + 1}. ${a.agent} - ${a.task}`);
+                    log.step(`${i + 1}. ${a.agent} — ${a.task.slice(0, 80)}${a.task.length > 80 ? '…' : ''}`);
                 });
 
                 return {
@@ -131,12 +132,10 @@ export function createCoordinatorAgent(model: OpenAIModel = DEFAULT_MODEL, hooks
             }),
 
             async execute({ agentName, taskDetails, context, priority }) {
-                console.log(`\n  🎯 DELEGATION:`);
-                console.log(`     To: ${agentName}`);
-                console.log(`     Task: ${taskDetails.slice(0, 80)}${taskDetails.length > 80 ? '...' : ''}`);
-                console.log(`     Priority: ${priority}`);
+                log.complete('🎯 delegating', `→ ${agentName} (${priority})`);
+                log.detail('task', `${taskDetails.slice(0, 80)}${taskDetails.length > 80 ? '…' : ''}`);
                 if (context) {
-                    console.log(`     Context: ${context.slice(0, 60)}${context.length > 60 ? '...' : ''}`);
+                    log.detail('context', `${context.slice(0, 60)}${context.length > 60 ? '…' : ''}`);
                 }
 
                 // Return handoff signal for orchestrator
@@ -169,7 +168,7 @@ export function createCoordinatorAgent(model: OpenAIModel = DEFAULT_MODEL, hooks
             // the result), emits an input_request event, waits for the answer,
             // and feeds it back into the next coordinator turn.
             async execute({ question }) {
-                console.log(`\n  ❓ REQUEST USER INPUT: ${question}`);
+                log.detail('❓ asking user', question);
                 return {
                     requestUserInput: true,
                     question,
@@ -201,12 +200,11 @@ export function createCoordinatorAgent(model: OpenAIModel = DEFAULT_MODEL, hooks
             }),
 
             async execute({ finalResponse, workflowSummary, agentsUsed }) {
-                console.log(`\n  ✅ WORKFLOW COMPLETE`);
-                console.log(`     Summary: ${workflowSummary}`);
+                log.complete('workflow complete', `${finalResponse.length} chars`);
+                log.detail('summary', workflowSummary);
                 if (agentsUsed && agentsUsed.length > 0) {
-                    console.log(`     Agents used: ${agentsUsed.join(' → ')}`);
+                    log.detail('agents', agentsUsed.join(' → '));
                 }
-                console.log(`     Response length: ${finalResponse.length} characters`);
 
                 // Return completion signal for orchestrator
                 return {

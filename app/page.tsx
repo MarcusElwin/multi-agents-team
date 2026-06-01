@@ -777,14 +777,14 @@ function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
           {(meta.totalDuration / 1000).toFixed(1)}s
         </span>
       )}
-      {meta.agentsUsed?.map((a) => (
-        <span key={a} className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-600">
+      {meta.agentsUsed?.map((a, i) => (
+        <span key={`${a}-${i}`} className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-600">
           {prettyAgentName(a)}
         </span>
       ))}
-      {meta.perAgent?.map((a) => (
+      {meta.perAgent?.map((a, i) => (
         <span
-          key={a.agent}
+          key={`${a.agent}-${i}`}
           className={cn(
             'flex items-center gap-1 rounded-full border px-2 py-0.5',
             a.completed

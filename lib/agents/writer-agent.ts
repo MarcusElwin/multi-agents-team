@@ -4,6 +4,7 @@ import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 import { type AgentHooks } from "../agent-events";
 import { makeStepHook } from "./researcher-agent";
+import * as log from "../logger";
 
 export function createWriterAgent(model: OpenAIModel = DEFAULT_MODEL, hooks: AgentHooks = {}) {
     return new Agent({
@@ -35,7 +36,7 @@ When your draft is complete:
                     .describe('The style/format to apply'),
             }),
             execute: async ({ content, style }) => {
-                console.log(`  ✍️  Formatting as: ${style}`);
+                log.detail('✍️  formatting', style);
                 
                 // Add appropriate structure based on style
                 let formatted = content;
@@ -79,9 +80,7 @@ When your draft is complete:
                     .describe('Any notes for the next agent or coordinator')
             }),
             execute: async ({ draft, contentType, nextAgent, notes }) => {
-                console.log('  ↩️  Returning to coordinator');
-                console.log(`  📝 Draft type: ${contentType}`);
-                console.log(`  💡 Recommending: ${nextAgent}`);
+                log.complete('draft returned to coordinator', `${contentType} · ${draft.length} chars · next: ${nextAgent}`);
                 
                 return {
                     done: true,

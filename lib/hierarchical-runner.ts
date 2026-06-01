@@ -164,6 +164,7 @@ export class HierarchicalRunner {
     const start = Date.now();
     const agent = createNodeAgent({
       role: node.role,
+      task: node.task,
       depth: node.depth,
       canSpawn,
       maxChildren: MAX_CHILDREN,
@@ -171,6 +172,8 @@ export class HierarchicalRunner {
       hooks: {
         onStep: ({ stepIndex, text, toolNames }) =>
           this.emit({ type: "agent_step", agent: node.role, stepIndex, text, toolNames }),
+        onWebSearch: ({ status, query, sources }) =>
+          this.emit({ type: "web_search", agent: node.role, status, query, sources }),
       },
     }) as unknown as NodeAgent;
 
@@ -203,6 +206,8 @@ export class HierarchicalRunner {
     const synthStart = Date.now();
     const synthAgent = createNodeAgent({
       role: node.role,
+      // Synthesis combines children's work — no fresh web search needed.
+      task: "synthesize the sub-agent results into a final deliverable",
       depth: node.depth,
       canSpawn: false, // synthesis never spawns again
       maxChildren: MAX_CHILDREN,

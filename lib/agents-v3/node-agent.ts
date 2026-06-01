@@ -4,6 +4,7 @@ import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 import { type AgentHooks } from "../agent-events";
 import { makeStepHook } from "../agents/researcher-agent";
+import { makeWebSearchTool, needsWebSearch } from "../tools/web-search";
 
 /**
  * A single node in the v3 hierarchy. Every node runs the SAME agent definition,
@@ -21,13 +22,17 @@ import { makeStepHook } from "../agents/researcher-agent";
  */
 export function createNodeAgent(opts: {
   role: string;
+  task: string;
   depth: number;
   canSpawn: boolean;
   maxChildren: number;
   model?: OpenAIModel;
   hooks?: AgentHooks;
 }) {
-  const { role, canSpawn, maxChildren, model = DEFAULT_MODEL, hooks = {} } = opts;
+  const { role, task, canSpawn, maxChildren, model = DEFAULT_MODEL, hooks = {} } = opts;
+
+  // Give research-y nodes the real web-search tool; others reason from prompt.
+  const webSearchEnabled = needsWebSearch(`${role} ${task}`);
 
   const spawnGuidance = canSpawn
     ? `You MAY break this task down. If it has clearly separable parts, call spawnSubAgent ` +
@@ -64,20 +69,33 @@ export function createNodeAgent(opts: {
     execute: async ({ role: childRole, task }) => ({ spawn: true, role: childRole, task }),
   });
 
-  // Both tools are always present (a flat literal keeps the ToolSet types
-  // clean). At the depth cap the system prompt tells the node NOT to spawn, and
-  // the runner ignores any spawn results past MAX_DEPTH as a hard backstop.
-  return new Agent({
+  const webSearch = makeWebSearchTool(model, hooks);
+
+  // Two full literals (no optional keys) keep the ToolSet types clean — a
+  // conditional `...(cond ? {x} : {})` spread infers `x?: undefined`, which
+  // breaks the onStepFinish callback's inferred ToolSet.
+  const baseSystem =
+    `You are a "${role}" agent in a hierarchical team. Your job is to fulfil the task you ` +
+    `are given.\n\n${spawnGuidance}\n\n` +
+    (webSearchEnabled
+      ? `You have a webSearch tool — USE IT to ground your work in real, current, sourced ` +
+        `information rather than guessing. Cite what you find.\n\n`
+      : ``) +
+    `RULES:\n` +
+    `- Be concrete and useful. Produce real content (specs, code, analysis), not meta-talk.\n` +
+    `- If you spawn children, do it in ONE batch of spawnSubAgent calls, then stop and wait.\n` +
+    `- Always end by calling finalize exactly once with your deliverable.`;
+
+  const common = {
     model: openai(model),
-    system:
-      `You are a "${role}" agent in a hierarchical team. Your job is to fulfil the task you ` +
-      `are given.\n\n${spawnGuidance}\n\n` +
-      `RULES:\n` +
-      `- Be concrete and useful. Produce real content (specs, code, analysis), not meta-talk.\n` +
-      `- If you spawn children, do it in ONE batch of spawnSubAgent calls, then stop and wait.\n` +
-      `- Always end by calling finalize exactly once with your deliverable.`,
-    tools: { spawnSubAgent, finalize },
-    stopWhen: stepCountIs(canSpawn ? maxChildren + 3 : 4),
+    system: baseSystem,
+    stopWhen: stepCountIs(canSpawn ? maxChildren + 4 : 5),
     onStepFinish: makeStepHook(hooks),
-  });
+  };
+
+  // At the depth cap the system prompt tells the node NOT to spawn; the runner
+  // also ignores any spawn results past MAX_DEPTH as a hard backstop.
+  return webSearchEnabled
+    ? new Agent({ ...common, tools: { spawnSubAgent, finalize, webSearch } })
+    : new Agent({ ...common, tools: { spawnSubAgent, finalize } });
 }

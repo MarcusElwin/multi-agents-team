@@ -234,7 +234,9 @@ function EventCell({ event, index }: { event: AgentEvent; index: number }) {
             </span>
             <span className="truncate text-stone-700">{meta.headline}</span>
           </span>
-          {meta.subline && (
+          {/* Hide the one-line preview once expanded if the full text block
+              below would just repeat it — avoids showing both versions. */}
+          {meta.subline && !(expanded && text) && (
             <span className="mt-0.5 line-clamp-1 block text-[11px] text-stone-500">
               {meta.subline}
             </span>

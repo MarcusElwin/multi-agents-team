@@ -416,7 +416,10 @@ export default function Home() {
   }
 
   const hasMessages = messages.length > 0;
-  const spec = MODES[mode];
+  // Fall back to v1 if a stored conversation carries a mode this build doesn't
+  // know (e.g. a v3 chat persisted by another branch) — avoids a crash on
+  // MODES[mode] being undefined.
+  const spec = MODES[mode] ?? MODES.v1;
   const liveAgents = Array.from(live.agents.values());
 
   return (

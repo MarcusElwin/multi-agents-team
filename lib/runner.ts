@@ -10,7 +10,7 @@ import { createFrontendAgent } from './agents-v2/frontend';
 import { createDesignAgent } from './agents-v2/design';
 import { MessageBus, Message } from './message-bus';
 import { Conversation } from './conversation';
-import { DEFAULT_MODEL, type OpenAIModel } from './models';
+import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel } from './models';
 import type { EventSink } from './agent-events';
 import * as log from './logger';
 import chalk from 'chalk';
@@ -38,6 +38,7 @@ interface AgentResult {
     text: string;
     steps: AgentStep[];
     response?: { messages?: ResponseMessage[] };
+    usage?: { inputTokens?: number; outputTokens?: number; promptTokens?: number; completionTokens?: number };
 }
 
 interface AgentExecutionResult {
@@ -45,6 +46,9 @@ interface AgentExecutionResult {
     output: string;
     duration: number;
     completed: boolean;
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
 }
 
 interface RunnerSummary {
@@ -152,6 +156,14 @@ export class AgentRunner {
         };
 
         const agentResults: AgentExecutionResult[] = [];
+        // How many times each agent has run, so we can prompt the first turn as
+        // "share your initial plan" and later turns as "respond to peer feedback
+        // and finalize" — otherwise agents re-share forever and never complete.
+        const turnCount: Record<AgentName, number> = {
+            backendAgent: 0,
+            frontendAgent: 0,
+            designAgent: 0,
+        };
         let iterations = 0;
 
         // Start with the randomly selected agent
@@ -180,7 +192,10 @@ export class AgentRunner {
                 log.iteration(iterations, currentAgent);
                 emit({ type: 'iteration_start', iteration: iterations, agent: currentAgent });
 
-                const result = await this.executeAgent(agents[currentAgent], currentAgent, queryForAgents, emit);
+                const turn = ++turnCount[currentAgent];
+                const result = await this.executeAgent(
+                    agents[currentAgent], currentAgent, queryForAgents, bus, turn, emit,
+                );
                 agentResults.push(result);
 
                 // Update completion status
@@ -200,6 +215,9 @@ export class AgentRunner {
                     stepCount: 0,
                     outputPreview: result.output.slice(0, 240),
                     completed: result.completed,
+                    inputTokens: result.inputTokens,
+                    outputTokens: result.outputTokens,
+                    costUsd: result.costUsd,
                 });
 
                 // Check coordination messages
@@ -233,19 +251,39 @@ export class AgentRunner {
 
             this.printSummary(summary, completionStatus);
 
+            // agentResults holds one entry PER ITERATION; collapse to one card
+            // per agent (latest output wins, durations summed, completed if it
+            // ever completed) so the UI shows three cards, not ten near-duplicates.
+            const latestByAgent = new Map<AgentName, { agent: AgentName; output: string; duration: number; completed: boolean }>();
+            for (const r of agentResults) {
+                const prev = latestByAgent.get(r.agent);
+                latestByAgent.set(r.agent, {
+                    agent: r.agent,
+                    output: r.output, // latest wins
+                    duration: (prev?.duration ?? 0) + r.duration,
+                    completed: r.completed || (prev?.completed ?? false),
+                });
+            }
+            // Preserve a stable, role-ordered sequence.
+            const dedupedResults = agentNames
+                .map((name) => latestByAgent.get(name))
+                .filter((r): r is NonNullable<typeof r> => Boolean(r));
+
+            const totalInputTokens = agentResults.reduce((s, r) => s + r.inputTokens, 0);
+            const totalOutputTokens = agentResults.reduce((s, r) => s + r.outputTokens, 0);
+            const totalCostUsd = agentResults.reduce((s, r) => s + r.costUsd, 0);
+
             emit({
                 type: 'workflow_complete',
                 mode: 'v2',
-                agentResults: agentResults.map(r => ({
-                    agent: r.agent,
-                    output: r.output,
-                    duration: r.duration,
-                    completed: r.completed,
-                })),
+                agentResults: dedupedResults,
                 iterations,
                 totalDuration,
                 agentsUsed: agentNames,
                 messageBusStats: summary.messageBusStats,
+                totalInputTokens,
+                totalOutputTokens,
+                totalCostUsd,
             });
 
             return summary;
@@ -255,19 +293,66 @@ export class AgentRunner {
     }
 
     /**
+     * Build a turn-appropriate prompt for a choreographed agent. Crucially it
+     * feeds the agent its inbox (what peers have sent it) — without this, every
+     * agent only ever sees the raw user query, re-shares its initial plan, and
+     * waits forever for feedback it never reads, so no one calls markCompleted.
+     *
+     * Turn 1: share your initial plan and coordinate.
+     * Later turns: here's peer feedback — incorporate it and finalize
+     * (markCompleted) once your part is addressed; don't just re-share.
+     */
+    private buildAgentPrompt(
+        agentName: AgentName,
+        userQuery: string,
+        bus: MessageBus,
+        turn: number,
+    ): string {
+        // Peer messages addressed to this agent (exclude the broadcast user query).
+        const inbox = bus
+            .getInbox(agentName)
+            .filter((m) => m.metadata.type === 'agent');
+
+        if (turn <= 1 || inbox.length === 0) {
+            return (
+                `${userQuery}\n\n` +
+                `This is your first turn. Share your initial plan with the other ` +
+                `agents using coordinationTool, then stop. You'll get their feedback next turn.`
+            );
+        }
+
+        const feedback = inbox
+            .slice(-6)
+            .map((m) => `- From ${m.from}: ${m.content.trim()}`)
+            .join('\n');
+
+        return (
+            `Original task: ${userQuery}\n\n` +
+            `Feedback and updates from your peers since your last turn:\n${feedback}\n\n` +
+            `Incorporate this feedback into your plan. If your part is now ` +
+            `sufficiently specified given what peers have shared, call markCompleted ` +
+            `with your final deliverable. Only send another coordination message if ` +
+            `you genuinely still need specific information — do NOT just re-share your ` +
+            `initial plan. Prefer finalizing.`
+        );
+    }
+
+    /**
      * Execute a single agent
      */
     private async executeAgent(
         agent: V2Agent,
         agentName: AgentName,
         userQuery: string,
+        bus: MessageBus,
+        turn: number,
         emit: EventSink = () => {},
     ): Promise<AgentExecutionResult> {
         const agentStartTime = Date.now();
 
         try {
             const result: AgentResult = await agent.generate({
-                prompt: userQuery
+                prompt: this.buildAgentPrompt(agentName, userQuery, bus, turn),
             });
 
             const agentDuration = Date.now() - agentStartTime;
@@ -291,12 +376,18 @@ export class AgentRunner {
             }
 
             const completed = this.detectCompletion(result);
+            const u = result.usage ?? {};
+            const inputTokens = u.inputTokens ?? u.promptTokens ?? 0;
+            const outputTokens = u.outputTokens ?? u.completionTokens ?? 0;
 
             return {
                 agent: agentName,
                 output,
                 duration: agentDuration,
-                completed
+                completed,
+                inputTokens,
+                outputTokens,
+                costUsd: estimateCost(this.model, { inputTokens, outputTokens }),
             };
 
         } catch (error) {
@@ -305,7 +396,10 @@ export class AgentRunner {
                 agent: agentName,
                 output: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
                 duration: Date.now() - agentStartTime,
-                completed: false
+                completed: false,
+                inputTokens: 0,
+                outputTokens: 0,
+                costUsd: 0,
             };
         }
     }
@@ -344,6 +438,8 @@ export class AgentRunner {
      * Print execution summary
      */
     private printSummary(summary: RunnerSummary, completionStatus: Record<AgentName, boolean>): void {
+        const tokens = summary.agentResults.reduce((s, r) => s + r.inputTokens + r.outputTokens, 0);
+        const cost = summary.agentResults.reduce((s, r) => s + r.costUsd, 0);
         log.box('📊 Execution Summary', 'green');
         log.kv({
             'Starting agent': summary.startingAgent,
@@ -352,6 +448,7 @@ export class AgentRunner {
             'Agents executed': summary.agentResults.length,
             'Coordination msgs': summary.coordinationMessages.length,
             'Bus messages': summary.messageBusStats.totalMessages,
+            'Est. cost': `${formatCost(cost)} (${tokens.toLocaleString()} tokens)`,
         });
 
         log.rule('Completion');

@@ -1,10 +1,15 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { DEFAULT_MODEL, type OpenAIModel } from "../models";
+import { type AgentHooks } from "../agent-events";
+import { makeStepHook } from "./researcher-agent";
+import * as log from "../logger";
 
-export const coordinatorAgent = new Agent({
-    model: openai('gpt-5'),
-    system: `You are the Coordinator Agent - orchestrator of specialized agents.
+export function createCoordinatorAgent(model: OpenAIModel = DEFAULT_MODEL, hooks: AgentHooks = {}) {
+    return new Agent({
+        model: openai(model),
+        system: `You are the Coordinator Agent - orchestrator of specialized agents.
 
     Your role:
     1. Deeply understand what the user wants to achieve
@@ -18,7 +23,19 @@ export const coordinatorAgent = new Agent({
     - After delegating, STOP and wait for the specialist to return results
     - When a specialist returns, delegate to the NEXT agent or mark complete
     - NEVER simulate what other agents would do - let them do their actual work
-    
+
+    DO NOT (these are common mistakes — avoid them):
+    - Do NOT ask the user for a "Task ID", "workflow ID", logs, timestamps, or
+      "which workflow to check". There is no external workflow system. Each
+      request is self-contained: the user's message IS the task.
+    - Do NOT claim there is "no active workflow" or "no results to retrieve".
+      You are STARTING the workflow now by delegating to specialists.
+    - Do NOT treat the request as a status check. If the user says "write X",
+      your job is to get X written — delegate to writerAgent (after research if
+      needed), then editorAgent, then markComplete.
+    - Only use requestUserInput for genuine content ambiguity (e.g. an unstated
+      audience or format that changes the output), never for workflow logistics.
+
     Available Agents:
     - researcherAgent: Research, information gathering, fact-finding, source validation
     - writerAgent: Content creation, drafting, storytelling, structuring
@@ -53,7 +70,7 @@ export const coordinatorAgent = new Agent({
             2. Which agents are needed?
             3. What order makes sense?
             4. What should each agent focus on?`,
-            
+
             inputSchema: z.object({
                 userIntent: z.string()
                     .describe('What you understand the user wants to achieve'),
@@ -67,20 +84,20 @@ export const coordinatorAgent = new Agent({
                 reasoning: z.string()
                     .describe('Your complete reasoning for this workflow plan')
             }),
-            
+
             execute: async ({ userIntent, selectedAgents, reasoning }) => {
-                console.log('  🔍 Coordinator Analysis:');
-                console.log(`     User Intent: ${userIntent}`);
-                console.log(`     Reasoning: ${reasoning}`);
-                console.log('     Planned Workflow:');
-                
+                log.complete('🔍 coordinator analysis');
+                log.detail('intent', userIntent);
+                log.detail('reasoning', reasoning);
+
                 // Sort agents by order
                 const sortedAgents = selectedAgents.sort((a, b) => a.order - b.order);
-                
+
+                log.detail('plan', sortedAgents.map((a) => a.agent).join(' → '));
                 sortedAgents.forEach((a, i) => {
-                    console.log(`       ${i + 1}. ${a.agent} - ${a.task}`);
+                    log.step(`${i + 1}. ${a.agent} — ${a.task.slice(0, 80)}${a.task.length > 80 ? '…' : ''}`);
                 });
-                
+
                 return {
                     userIntent,
                     reasoning,
@@ -102,7 +119,7 @@ export const coordinatorAgent = new Agent({
             - editorAgent: When you need content reviewed, polished, or refined
             
             Include context from previous agents so the next agent has all needed information.`,
-            
+
             inputSchema: z.object({
                 agentName: z.enum(["researcherAgent", "writerAgent", "editorAgent"])
                     .describe('Which specialized agent to delegate to'),
@@ -113,16 +130,14 @@ export const coordinatorAgent = new Agent({
                 priority: z.enum(['low', 'medium', 'high']).optional().default('medium')
                     .describe('How important/urgent this task is'),
             }),
-            
+
             async execute({ agentName, taskDetails, context, priority }) {
-                console.log(`\n  🎯 DELEGATION:`);
-                console.log(`     To: ${agentName}`);
-                console.log(`     Task: ${taskDetails.slice(0, 80)}${taskDetails.length > 80 ? '...' : ''}`);
-                console.log(`     Priority: ${priority}`);
+                log.complete('🎯 delegating', `→ ${agentName} (${priority})`);
+                log.detail('task', `${taskDetails.slice(0, 80)}${taskDetails.length > 80 ? '…' : ''}`);
                 if (context) {
-                    console.log(`     Context: ${context.slice(0, 60)}${context.length > 60 ? '...' : ''}`);
+                    log.detail('context', `${context.slice(0, 60)}${context.length > 60 ? '…' : ''}`);
                 }
-                
+
                 // Return handoff signal for orchestrator
                 return {
                     handoff: true,              // ← Tells orchestrator to switch agents
@@ -134,7 +149,33 @@ export const coordinatorAgent = new Agent({
                 };
             },
         }),
-        
+
+        requestUserInput: tool({
+            description: `Ask the human user a clarifying question when the request is ambiguous and you cannot proceed confidently without their answer.
+
+            Use this SPARINGLY and only when:
+            - The request is genuinely ambiguous (e.g. missing a key choice, audience, or constraint)
+            - Proceeding on a guess would likely produce the wrong result
+
+            Do NOT use this for trivial defaults you can reasonably assume. After you receive the answer, continue the workflow normally (analyze/delegate).`,
+
+            inputSchema: z.object({
+                question: z.string()
+                    .describe('A single, specific question for the user. Keep it short and concrete.'),
+            }),
+
+            // The orchestrator intercepts this tool call (it sees the question in
+            // the result), emits an input_request event, waits for the answer,
+            // and feeds it back into the next coordinator turn.
+            async execute({ question }) {
+                log.detail('❓ asking user', question);
+                return {
+                    requestUserInput: true,
+                    question,
+                };
+            },
+        }),
+
         markComplete: tool({
             description: `Mark the entire workflow as complete and provide the final response to the user.
             
@@ -147,7 +188,7 @@ export const coordinatorAgent = new Agent({
             - You still need another agent to do work
             - The workflow is not finished
             - You're waiting for agent results`,
-            
+
             inputSchema: z.object({
                 finalResponse: z.string()
                     .describe('The complete, polished final answer to give the user'),
@@ -157,15 +198,14 @@ export const coordinatorAgent = new Agent({
                     .optional()
                     .describe('Which agents were involved in this workflow'),
             }),
-            
+
             async execute({ finalResponse, workflowSummary, agentsUsed }) {
-                console.log(`\n  ✅ WORKFLOW COMPLETE`);
-                console.log(`     Summary: ${workflowSummary}`);
+                log.complete('workflow complete', `${finalResponse.length} chars`);
+                log.detail('summary', workflowSummary);
                 if (agentsUsed && agentsUsed.length > 0) {
-                    console.log(`     Agents used: ${agentsUsed.join(' → ')}`);
+                    log.detail('agents', agentsUsed.join(' → '));
                 }
-                console.log(`     Response length: ${finalResponse.length} characters`);
-                
+
                 // Return completion signal for orchestrator
                 return {
                     complete: true,             // ← Tells orchestrator workflow is done
@@ -179,5 +219,7 @@ export const coordinatorAgent = new Agent({
         }),
     },
     stopWhen: stepCountIs(10),
+    onStepFinish: makeStepHook(hooks),
 
-})
+    });
+}

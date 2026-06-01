@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import * as log from './logger';
 
 export interface Message {
     id: string,
@@ -9,47 +10,82 @@ export interface Message {
         timestamp: Date;
         type: 'user' | 'agent' | 'system';
         agentType?: 'coordinator' | 'researcherAgent' | 'writerAgent' | 'editorAgent';
-        // Add optional extended metadata
-        toolResults?: any;
-        handoffContext?: any;
+        // Optional extended metadata. Kept loosely typed (consumers narrow at
+        // the use site, e.g. orchestrator's HandoffContext); unknown beats any.
+        toolResults?: Record<string, unknown>;
+        handoffContext?: Record<string, unknown>;
         stepCount?: number;
         workComplete?: boolean;
         error?: boolean;
     };
 }
 
+// Canonical agent ids and the aliases LLMs sometimes invent for them.
+const AGENT_ALIASES: Record<string, string> = {
+    backend: 'backendAgent',
+    'backend-agent': 'backendAgent',
+    backend_agent: 'backendAgent',
+    frontend: 'frontendAgent',
+    'frontend-agent': 'frontendAgent',
+    frontend_agent: 'frontendAgent',
+    design: 'designAgent',
+    'design-agent': 'designAgent',
+    design_agent: 'designAgent',
+    researcher: 'researcherAgent',
+    writer: 'writerAgent',
+    editor: 'editorAgent',
+};
+
+function canonicalizeAgentName(name: string): string {
+    return AGENT_ALIASES[name] ?? name;
+}
+
 export class MessageBus extends EventEmitter {
     private messages: Message[] = [];
+    // Per-recipient inboxes, maintained automatically on publish. This replaces
+    // the per-agent module-level `receivedMessages` arrays the v2 agents used to
+    // keep, which leaked across requests because they were never cleared.
+    private inboxes = new Map<string, Message[]>();
 
     constructor() {
         super();
-        console.log('📨 MessageBus initialized');
+        log.debug('MessageBus initialized');
     }
 
     publish(message: Omit<Message, 'id'>) {
+        const canonicalTo = canonicalizeAgentName(message.to);
+        const canonicalFrom = canonicalizeAgentName(message.from);
         const msgWithId: Message = {
             id: crypto.randomUUID(),
-            ...message
+            ...message,
+            from: canonicalFrom,
+            to: canonicalTo,
         };
         this.messages.push(msgWithId);
 
-        console.log(`
-        📬 Message Published:
-        From: ${msgWithId.from}
-        To: ${msgWithId.to}
-        Type: ${msgWithId.metadata.type}
-        Content: ${msgWithId.content.slice(0, 50)}...
-            `);
-            
+        const inbox = this.inboxes.get(canonicalTo);
+        if (inbox) inbox.push(msgWithId);
+        else this.inboxes.set(canonicalTo, [msgWithId]);
+
+        log.message(msgWithId.from, msgWithId.to, msgWithId.metadata.type, msgWithId.content);
+
         this.emit('message', msgWithId);
         this.emit(`message:${msgWithId.to}`, msgWithId);
-            
+
         return msgWithId;
     }
 
     subscribe(agentId: string, callback: (message: Message) => void) {
         this.on(`message:${agentId}`, callback);
-        console.log(`🔔 Agent ${agentId} subscribed to messages`);
+        log.debug(`Agent ${agentId} subscribed`);
+    }
+
+    /** Messages addressed to a given agent, optionally filtered by sender. */
+    getInbox(agentId: string, fromAgent?: string): Message[] {
+        const inbox = this.inboxes.get(canonicalizeAgentName(agentId)) ?? [];
+        if (!fromAgent) return inbox;
+        const from = canonicalizeAgentName(fromAgent);
+        return inbox.filter((m) => m.from === from);
     }
 
     // Updated to support optional filtering
@@ -68,7 +104,8 @@ export class MessageBus extends EventEmitter {
 
     clear() {
         this.messages = [];
-        console.log('🗑️ Message bus cleared');
+        this.inboxes.clear();
+        log.debug('Message bus cleared');
     }
 
     getHandoffMessages(): Message[] {

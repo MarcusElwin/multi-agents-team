@@ -1,9 +1,13 @@
 import { Experimental_Agent as Agent, stepCountIs, tool, generateObject, generateText } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { DEFAULT_MODEL, type OpenAIModel } from "../models";
+import type { AgentHooks } from "../agent-events";
+import * as log from "../logger";
 
-export const researcherAgent = new Agent({
-    model: openai('gpt-4.1'),
+export function createResearcherAgent(model: OpenAIModel = DEFAULT_MODEL, hooks: AgentHooks = {}) {
+    return new Agent({
+    model: openai(model),
     system: `You are the Researcher Agent - an expert in gathering and analyzing information.
 
     Your responsibilities:
@@ -31,25 +35,32 @@ export const researcherAgent = new Agent({
                     .describe('What specific information to extract (e.g., "key benefits", "recent statistics", "main challenges")'),
             }),
             execute: async ({ query, extractionGoal }) => {
-                console.log(`  🔍 Web Searching: "${query}"`);
-                console.log(`  🎯 Extraction goal: "${extractionGoal}"`);
-                
+                log.detail('🔍 search', query);
+                log.detail('🎯 goal', extractionGoal);
+                hooks.onWebSearch?.({ status: 'start', query });
+
+                // Single active-spinner ref so the catch can always stop the
+                // one that's running, whichever phase failed.
+                let spin = log.spinner(`searching the web: "${query.slice(0, 50)}${query.length > 50 ? '…' : ''}"`);
                 try {
-                    // Step 1: Use OpenAI's web search to get information with sources
+                    // Step 1: OpenAI web search with sourced citations. Uses the
+                    // run's selected model (was hardcoded to gpt-4.1). Tool key
+                    // must be `web_search` for the current openai.tools.webSearch.
                     const { text, sources } = await generateText({
-                        model: openai.responses('gpt-4.1'),
+                        model: openai.responses(model),
                         prompt: `${query}\n\nFocus on: ${extractionGoal}`,
                         tools: {
-                            web_search_preview: openai.tools.webSearch({}),
+                            web_search: openai.tools.webSearch({}),
                         },
                     });
 
-                    console.log(`  📄 Search results length: ${text.length} chars`);
-                    console.log(`  📚 Sources found: ${sources?.length || 0}`);
+                    spin.succeed(`found ${sources?.length ?? 0} source${sources?.length === 1 ? '' : 's'} · ${text.length} chars`);
+                    hooks.onWebSearch?.({ status: 'done', query, sources: sources?.length ?? 0 });
 
+                    spin = log.spinner('structuring findings…');
                     // Step 2: Use generateObject to structure the findings
                     const structuredData = await generateObject({
-                        model: openai.responses('gpt-4.1'),
+                        model: openai.responses(model),
                         schema: z.object({
                             summary: z.string()
                                 .describe('Brief summary of findings'),
@@ -79,10 +90,11 @@ Focus on: ${extractionGoal}
 Identify key findings, relevant statistics, and related topics that might need further research.`
                     });
 
-                    console.log(`  ✅ Extracted ${structuredData.object.keyFindings.length} key findings`);
-                    if (structuredData.object.statistics) {
-                        console.log(`  📊 Found ${structuredData.object.statistics.length} statistics`);
-                    }
+                    const nStats = structuredData.object.statistics?.length ?? 0;
+                    spin.succeed(
+                        `extracted ${structuredData.object.keyFindings.length} finding${structuredData.object.keyFindings.length === 1 ? '' : 's'}` +
+                        (nStats ? ` · ${nStats} stat${nStats === 1 ? '' : 's'}` : '')
+                    );
 
                     return {
                         success: true,
@@ -92,8 +104,8 @@ Identify key findings, relevant statistics, and related topics that might need f
                     };
 
                 } catch (error) {
-                    console.error('  ❌ Web search error:', error);
-                    
+                    spin.fail(`web search failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+
                     // Fallback to mock data if web search fails
                     return {
                         success: false,
@@ -137,10 +149,8 @@ Identify key findings, relevant statistics, and related topics that might need f
                     .describe('Why you recommend this next step')
             }),
             execute: async ({ findings, structuredData, nextAgent, reasoning }) => {
-                console.log('  ↩️  Returning to coordinator');
-                console.log(`  💡 Recommending: ${nextAgent}`);
-                console.log(`  📚 Key findings: ${structuredData.keyFindings.length}`);
-                console.log(`  📎 Sources: ${structuredData.sources.length}`);
+                log.complete('research returned to coordinator',
+                    `${structuredData.keyFindings.length} findings · ${structuredData.sources.length} sources · next: ${nextAgent}`);
                 
                 return {
                     done: true,
@@ -159,6 +169,24 @@ Identify key findings, relevant statistics, and related topics that might need f
             }
         })
     },
-    
+
     stopWhen: stepCountIs(20),
-});
+    onStepFinish: makeStepHook(hooks),
+    });
+}
+
+/**
+ * Builds an onStepFinish callback that forwards each step's reasoning text and
+ * tool names to the run via hooks.onStep. Shared shape across all agents.
+ */
+export function makeStepHook(hooks: AgentHooks) {
+    let stepIndex = 0;
+    return (step: { text?: string; toolCalls?: Array<{ toolName: string }> }) => {
+        const toolNames = (step.toolCalls ?? []).map((t) => t.toolName);
+        hooks.onStep?.({
+            stepIndex: stepIndex++,
+            text: (step.text ?? '').trim(),
+            toolNames,
+        });
+    };
+}

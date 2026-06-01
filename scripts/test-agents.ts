@@ -6,7 +6,6 @@ import { config } from 'dotenv';
 config({ path: resolve(process.cwd(), '.env.local') });
 
 import { AgentOrchestrator } from '../lib/orchestrator';
-import { messageBus } from '../lib/message-bus';
 
 async function testAgents() {
   console.log('\n🧪 TESTING MULTI-AGENT SYSTEM\n');
@@ -17,7 +16,7 @@ async function testAgents() {
     process.exit(1);
   }
 
-  const orchestrator = new AgentOrchestrator(messageBus);
+  const orchestrator = new AgentOrchestrator();
 
   const testCases = [
     {
@@ -45,8 +44,8 @@ async function testAgents() {
       console.log(result);
       console.log('█'.repeat(70) + '\n');
 
-      // Get stats - using the actual return type from getStats()
-      const stats = messageBus.getStats();
+      // Get stats from the orchestrator's own (per-run) bus.
+      const stats = orchestrator.getStats();
       
       console.log(`\n📊 STATS:`);
       console.log(`   Total messages: ${stats.totalMessages}`);

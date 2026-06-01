@@ -1,9 +1,14 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { DEFAULT_MODEL, type OpenAIModel } from "../models";
+import { type AgentHooks } from "../agent-events";
+import { makeStepHook } from "./researcher-agent";
+import * as log from "../logger";
 
-export const writerAgent = new Agent({
-    model: openai('gpt-4.1'),
+export function createWriterAgent(model: OpenAIModel = DEFAULT_MODEL, hooks: AgentHooks = {}) {
+    return new Agent({
+    model: openai(model),
     system: `You are the Writer Agent - an expert in creating engaging, well-structured content.
 
 Your responsibilities:
@@ -31,7 +36,7 @@ When your draft is complete:
                     .describe('The style/format to apply'),
             }),
             execute: async ({ content, style }) => {
-                console.log(`  ✍️  Formatting as: ${style}`);
+                log.detail('✍️  formatting', style);
                 
                 // Add appropriate structure based on style
                 let formatted = content;
@@ -75,9 +80,7 @@ When your draft is complete:
                     .describe('Any notes for the next agent or coordinator')
             }),
             execute: async ({ draft, contentType, nextAgent, notes }) => {
-                console.log('  ↩️  Returning to coordinator');
-                console.log(`  📝 Draft type: ${contentType}`);
-                console.log(`  💡 Recommending: ${nextAgent}`);
+                log.complete('draft returned to coordinator', `${contentType} · ${draft.length} chars · next: ${nextAgent}`);
                 
                 return {
                     done: true,
@@ -93,4 +96,6 @@ When your draft is complete:
     },
     
     stopWhen: stepCountIs(8),
-});
+    onStepFinish: makeStepHook(hooks),
+    });
+}

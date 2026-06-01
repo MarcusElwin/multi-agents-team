@@ -72,10 +72,12 @@ export const MODES: Record<Mode, ModeSpec> = {
       { id: 'designAgent', name: 'Design', role: 'UI/UX, styling, visual guidelines' },
     ],
     suggestions: [
-      'Design a task management feature with priorities and assignment',
-      'Build a real-time analytics dashboard',
-      'Create a notification preferences settings page',
-      'Spec out a multi-tenant billing system',
+      // Leads with a "self-contained component" so the Frontend agent emits
+      // renderable JSX → exercises the code preview + live Preview tab.
+      'Build a self-contained React analytics dashboard card: title, big metric, trend arrow, and a small bar chart, Tailwind styled',
+      'Design a self-contained HTML pricing page: monthly/annual toggle, three tiers, feature comparison table',
+      'Create a notification preferences settings page with channel toggles, quiet hours, and a digest summary',
+      'Design a Kanban board with draggable cards, columns, and a card detail drawer',
     ],
     durationHint: 'up to ~5 min',
   },

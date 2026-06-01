@@ -79,6 +79,16 @@ export type AgentEvent =
 
 export type EventSink = (event: AgentEvent) => void;
 
+/**
+ * Hooks passed into agent factories so an agent's tools/steps can emit events
+ * into the live run. The orchestrator/runner supplies closures that forward to
+ * the current run's EventSink with the right agent name and iteration.
+ */
+export interface AgentHooks {
+  onStep?: (info: { stepIndex: number; text: string; toolNames: string[] }) => void;
+  onWebSearch?: (info: { status: 'start' | 'done'; query: string; sources?: number }) => void;
+}
+
 const NOOP: EventSink = () => {};
 
 export function noopSink(): EventSink {

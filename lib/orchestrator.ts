@@ -1,12 +1,11 @@
 import {
-    coordinatorAgent, researcherAgent, writerAgent, editorAgent,
     createCoordinatorAgent, createResearcherAgent, createWriterAgent, createEditorAgent,
 } from './agents';
 import { MessageBus, type Message } from './message-bus';
 import { Conversation } from './conversation';
 import { waitForInput } from './input-registry';
 import { DEFAULT_MODEL, type OpenAIModel } from './models';
-import type { EventSink } from './agent-events';
+import type { AgentHooks, EventSink } from './agent-events';
 import * as log from './logger';
 
 type AgentType = 'coordinator' | 'researcherAgent' | 'writerAgent' | 'editorAgent';
@@ -86,7 +85,11 @@ export interface OrchestratorOptions {
 
 export class AgentOrchestrator {
     private currentAgent: AgentType = 'coordinator';
-    private agents: Record<AgentType, { generate(opts: { prompt: string }): Promise<AgentResult> }>;
+    private readonly model: OpenAIModel;
+    // Built per-run by buildAgents(), since hooks close over the current run's
+    // EventSink and read currentAgent/iteration to attribute live events.
+    private agents!: Record<AgentType, { generate(opts: { prompt: string }): Promise<AgentResult> }>;
+    private iteration = 0;
     private bus: MessageBus = new MessageBus();
     private conversation: Conversation = new Conversation();
     // Latest concrete artifacts produced by specialists this run. Carried
@@ -96,32 +99,45 @@ export class AgentOrchestrator {
     private artifacts: { findings?: string; draft?: string; sources?: string[] } = {};
 
     constructor(options: OrchestratorOptions = {}) {
-        const model = options.model;
+        this.model = options.model ?? DEFAULT_MODEL;
+        log.debug(`Agent Orchestrator initialized (model: ${this.model})`);
+    }
+
+    /**
+     * Build the agent set for a run, wiring per-agent hooks that forward live
+     * step reasoning and web-search activity to this run's EventSink. Hooks
+     * read currentAgent/iteration at fire time so each event is attributed to
+     * whichever agent is active.
+     */
+    private buildAgents(emit: EventSink) {
+        // Hooks for the agent currently named `agentName`. The closures read
+        // this.currentAgent/this.iteration lazily, so they stay correct as the
+        // run hands off between agents.
+        const hooksFor = (agentName: AgentType): AgentHooks => ({
+            onStep: ({ stepIndex, text, toolNames }) => {
+                if (!text && toolNames.length === 0) return;
+                emit({
+                    type: 'agent_step',
+                    agent: agentName,
+                    iteration: this.iteration,
+                    stepIndex,
+                    text,
+                    toolNames,
+                });
+            },
+            onWebSearch: ({ status, query, sources }) => {
+                emit({ type: 'web_search', agent: agentName, status, query, sources });
+            },
+        });
+
         // Agents only expose .generate() to us; the SDK's Agent type is richer,
         // so cast through unknown to the minimal shape we consume.
-        const asAgents = (a: {
-            coordinator: unknown;
-            researcherAgent: unknown;
-            writerAgent: unknown;
-            editorAgent: unknown;
-        }) => a as unknown as typeof this.agents;
-        if (model && model !== DEFAULT_MODEL) {
-            log.debug(`Orchestrator using custom model: ${model}`);
-            this.agents = asAgents({
-                coordinator: createCoordinatorAgent(model),
-                researcherAgent: createResearcherAgent(model),
-                writerAgent: createWriterAgent(model),
-                editorAgent: createEditorAgent(model),
-            });
-        } else {
-            this.agents = asAgents({
-                coordinator: coordinatorAgent,
-                researcherAgent: researcherAgent,
-                writerAgent: writerAgent,
-                editorAgent: editorAgent,
-            });
-        }
-        log.debug('Agent Orchestrator initialized');
+        this.agents = {
+            coordinator: createCoordinatorAgent(this.model, hooksFor('coordinator')),
+            researcherAgent: createResearcherAgent(this.model, hooksFor('researcherAgent')),
+            writerAgent: createWriterAgent(this.model, hooksFor('writerAgent')),
+            editorAgent: createEditorAgent(this.model, hooksFor('editorAgent')),
+        } as unknown as typeof this.agents;
     }
 
     private getAgent(agentType: AgentType) {
@@ -137,7 +153,10 @@ export class AgentOrchestrator {
         log.kv({ User: `"${userMessage.slice(0, 80)}${userMessage.length > 80 ? '…' : ''}"` });
 
         const emit: EventSink = onEvent ?? (() => {});
-        emit({ type: 'workflow_start', mode: 'v1', model: DEFAULT_MODEL, query: userMessage, startingAgent: 'coordinator' });
+        emit({ type: 'workflow_start', mode: 'v1', model: this.model, query: userMessage, startingAgent: 'coordinator' });
+
+        // Build agents for this run with hooks bound to this run's EventSink.
+        this.buildAgents(emit);
 
         // Use this conversation's isolated bus, and start from a clean slate so a
         // prior run's messages can't leak into prompt building (which previously
@@ -177,6 +196,7 @@ export class AgentOrchestrator {
         try {
         while (iterations < maxIterations) {
             iterations++;
+            this.iteration = iterations;
 
             log.iteration(iterations, this.currentAgent);
             emit({ type: 'iteration_start', iteration: iterations, agent: this.currentAgent });

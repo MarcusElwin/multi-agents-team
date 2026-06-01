@@ -1,6 +1,10 @@
 'use client';
 
-import { Bot, Check, Loader2, Wrench, MessageSquare, ArrowRight, ListChecks } from 'lucide-react';
+import { useState } from 'react';
+import {
+  Bot, Check, Loader2, Wrench, MessageSquare, ArrowRight, ListChecks,
+  ChevronRight, Brain, Search,
+} from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { prettyAgentName } from '@/lib/modes';
 
@@ -9,6 +13,18 @@ export type AgentStatus = 'pending' | 'running' | 'done';
 interface PlanStep {
   agent: string;
   task: string;
+}
+
+export interface AgentReasoningStep {
+  stepIndex: number;
+  text: string;
+  toolNames: string[];
+}
+
+export interface AgentSearch {
+  query: string;
+  status: 'start' | 'done';
+  sources?: number;
 }
 
 export interface LiveAgent {
@@ -20,6 +36,9 @@ export interface LiveAgent {
   outbound: number;
   outputPreview?: string;
   completed?: boolean;
+  // Live reasoning + search activity, surfaced in expandable rows.
+  steps: AgentReasoningStep[];
+  searches: AgentSearch[];
 }
 
 interface AgentTimelineProps {
@@ -140,6 +159,12 @@ function PlanBlock({
 }
 
 function AgentRow({ agent, now }: { agent: LiveAgent; now: number }) {
+  // Running agents default to expanded so live reasoning is visible; collapse
+  // once done to keep the timeline compact. User toggles override this.
+  const [override, setOverride] = useState<boolean | null>(null);
+  const hasDetail = agent.steps.length > 0 || agent.searches.length > 0;
+  const expanded = override ?? agent.status === 'running';
+
   const elapsed =
     agent.status === 'running' && agent.startedAt
       ? now - agent.startedAt
@@ -147,8 +172,23 @@ function AgentRow({ agent, now }: { agent: LiveAgent; now: number }) {
 
   return (
     <div className="rounded-xl border border-stone-100 bg-stone-50/60 px-3 py-2">
-      <div className="flex items-center justify-between gap-3">
+      <button
+        type="button"
+        disabled={!hasDetail}
+        onClick={() => setOverride(!expanded)}
+        className="flex w-full items-center justify-between gap-3 text-left disabled:cursor-default"
+      >
         <div className="flex min-w-0 items-center gap-2">
+          {hasDetail ? (
+            <ChevronRight
+              className={cn(
+                'h-3 w-3 shrink-0 text-stone-400 transition-transform',
+                expanded && 'rotate-90',
+              )}
+            />
+          ) : (
+            <span className="w-3 shrink-0" />
+          )}
           <StatusDot status={agent.status} />
           <span className="truncate text-sm font-medium text-stone-800">
             {prettyAgentName(agent.name)}
@@ -161,6 +201,12 @@ function AgentRow({ agent, now }: { agent: LiveAgent; now: number }) {
           )}
         </div>
         <div className="flex items-center gap-2 text-[11px] text-stone-500">
+          {agent.searches.length > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Search className="h-3 w-3" />
+              {agent.searches.length}
+            </span>
+          )}
           {agent.toolCalls.length > 0 && (
             <span className="inline-flex items-center gap-1">
               <Wrench className="h-3 w-3" />
@@ -175,9 +221,10 @@ function AgentRow({ agent, now }: { agent: LiveAgent; now: number }) {
           )}
           {elapsed > 0 && <span className="tabular-nums">{formatDuration(elapsed)}</span>}
         </div>
-      </div>
-      {agent.toolCalls.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
+      </button>
+
+      {!expanded && agent.toolCalls.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1 pl-5">
           {agent.toolCalls.slice(-4).map((tc, i) => (
             <span
               key={i}
@@ -193,8 +240,37 @@ function AgentRow({ agent, now }: { agent: LiveAgent; now: number }) {
           )}
         </div>
       )}
-      {agent.outputPreview && agent.status !== 'running' && (
-        <div className="mt-1.5 line-clamp-2 text-[11px] leading-snug text-stone-500">
+
+      {expanded && hasDetail && (
+        <div className="mt-2 space-y-1.5 border-l border-stone-200 pl-3 ml-1.5">
+          {agent.searches.map((s, i) => (
+            <div key={`s-${i}`} className="flex items-start gap-1.5 text-[11px] leading-snug">
+              <Search className={cn('mt-0.5 h-3 w-3 shrink-0', s.status === 'done' ? 'text-teal-600' : 'text-teal-400 animate-pulse')} />
+              <span className="min-w-0 text-stone-600">
+                <span className="text-stone-700">{s.query}</span>
+                {s.status === 'done' && (
+                  <span className="text-stone-400"> · {s.sources ?? 0} source{s.sources === 1 ? '' : 's'}</span>
+                )}
+              </span>
+            </div>
+          ))}
+          {agent.steps.map((step) => (
+            <div key={`step-${step.stepIndex}`} className="flex items-start gap-1.5 text-[11px] leading-snug">
+              <Brain className="mt-0.5 h-3 w-3 shrink-0 text-stone-400" />
+              <span className="min-w-0 text-stone-600">
+                {step.text || (
+                  <span className="text-stone-400">
+                    {step.toolNames.length ? `calling ${step.toolNames.join(', ')}` : 'thinking…'}
+                  </span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!expanded && agent.outputPreview && agent.status !== 'running' && (
+        <div className="mt-1.5 line-clamp-2 pl-5 text-[11px] leading-snug text-stone-500">
           {agent.outputPreview}
         </div>
       )}

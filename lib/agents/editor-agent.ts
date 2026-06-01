@@ -2,8 +2,10 @@ import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
+import { type AgentHooks } from "../agent-events";
+import { makeStepHook } from "./researcher-agent";
 
-export function createEditorAgent(model: OpenAIModel = DEFAULT_MODEL) {
+export function createEditorAgent(model: OpenAIModel = DEFAULT_MODEL, hooks: AgentHooks = {}) {
     return new Agent({
     model: openai(model),
     system: `You are the Editor Agent - an expert in reviewing and polishing content.
@@ -93,7 +95,6 @@ When editing is complete:
     },
     
     stopWhen: stepCountIs(8),
+    onStepFinish: makeStepHook(hooks),
     });
 }
-
-export const editorAgent = createEditorAgent();

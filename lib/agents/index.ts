@@ -1,4 +1,4 @@
-export { coordinatorAgent, createCoordinatorAgent } from './coordinator-agent';
-export { researcherAgent, createResearcherAgent } from './researcher-agent';
-export { writerAgent, createWriterAgent } from './writer-agent';
-export { editorAgent, createEditorAgent } from './editor-agent';
+export { createCoordinatorAgent } from './coordinator-agent';
+export { createResearcherAgent, makeStepHook } from './researcher-agent';
+export { createWriterAgent } from './writer-agent';
+export { createEditorAgent } from './editor-agent';

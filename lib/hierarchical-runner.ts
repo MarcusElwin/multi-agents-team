@@ -168,6 +168,7 @@ export class HierarchicalRunner {
       depth: node.depth,
       canSpawn,
       maxChildren: MAX_CHILDREN,
+      isRoot: node.depth === 0,
       model: this.model,
       hooks: {
         onStep: ({ stepIndex, text, toolNames }) =>
@@ -179,10 +180,28 @@ export class HierarchicalRunner {
 
     // First pass: the node decides whether to spawn and produces a finalize.
     const result = await agent.generate({ prompt: node.task });
-    const { spawns, deliverable } = this.parseResult(result);
+    const parsed = this.parseResult(result);
+    let spawns = parsed.spawns;
+    const deliverable = parsed.deliverable;
     this.account(result, node.role, this.nodeCount, Date.now() - start, deliverable);
 
-    // Leaf or chose not to spawn: return its own deliverable.
+    // Root retry: if the lead answered in one shot without decomposing, give it
+    // one firm nudge to spawn before we accept a flat (1-iteration) result.
+    if (node.depth === 0 && canSpawn && spawns.length === 0) {
+      log.step("lead did not decompose — retrying with an explicit spawn instruction");
+      const retryStart = Date.now();
+      const retry = await agent.generate({
+        prompt:
+          `${node.task}\n\nYou did not break this down. Decompose it now: identify its ` +
+          `2–${MAX_CHILDREN} natural parts and call spawnSubAgent once for EACH part ` +
+          `(focused role + self-contained task). Do not answer it yourself this time.`,
+      });
+      const retryParsed = this.parseResult(retry);
+      this.account(retry, node.role, this.nodeCount, Date.now() - retryStart, retryParsed.deliverable);
+      if (retryParsed.spawns.length > 0) spawns = retryParsed.spawns;
+    }
+
+    // Leaf or chose not to spawn (even after the retry): return its deliverable.
     if (!canSpawn || spawns.length === 0) {
       return deliverable || result.text;
     }

@@ -26,19 +26,29 @@ export function createNodeAgent(opts: {
   depth: number;
   canSpawn: boolean;
   maxChildren: number;
+  isRoot?: boolean;
   model?: OpenAIModel;
   hooks?: AgentHooks;
 }) {
-  const { role, task, canSpawn, maxChildren, model = DEFAULT_MODEL, hooks = {} } = opts;
+  const { role, task, canSpawn, maxChildren, isRoot = false, model = DEFAULT_MODEL, hooks = {} } = opts;
 
   // Give research-y nodes the real web-search tool; others reason from prompt.
   const webSearchEnabled = needsWebSearch(`${role} ${task}`);
 
+  // The root lead is strongly biased toward decomposition (otherwise a capable
+  // model just answers in one shot and no tree forms). Deeper nodes keep it
+  // optional so they don't over-spawn.
   const spawnGuidance = canSpawn
-    ? `You MAY break this task down. If it has clearly separable parts, call spawnSubAgent ` +
-      `once per part (at most ${maxChildren}), giving each child a focused role and a ` +
-      `self-contained task. Spawn ONLY when delegation genuinely helps — otherwise just do ` +
-      `the work yourself and call finalize. Do not spawn more than one round of children.`
+    ? isRoot
+      ? `You are the LEAD. Your job is to DECOMPOSE this task, not answer it yourself. ` +
+        `Identify its 2–${maxChildren} natural parts and call spawnSubAgent once per part — ` +
+        `each with a focused role and a self-contained task. Do this in ONE batch, then stop ` +
+        `and wait for their results. Do NOT call finalize on the first turn, and do NOT do ` +
+        `the work yourself unless the task is genuinely a single indivisible step.`
+      : `You MAY break this task down. If it has clearly separable parts, call spawnSubAgent ` +
+        `once per part (at most ${maxChildren}), giving each child a focused role and a ` +
+        `self-contained task. Spawn ONLY when delegation genuinely helps — otherwise just do ` +
+        `the work yourself and call finalize. Do not spawn more than one round of children.`
     : `You are at the maximum depth and CANNOT delegate further. Do the work yourself, ` +
       `then call finalize with your deliverable.`;
 

@@ -1,15 +1,18 @@
 # Multi-Agent AI System
 
-A multi-agent AI playground built with Next.js and the Vercel AI SDK. It ships **two distinct multi-agent architectures** sharing a common message bus, each exposed as its own API route.
+A multi-agent AI playground built with Next.js and the Vercel AI SDK. It ships **three distinct multi-agent architectures** sharing a common event/message layer, each exposed as its own streaming API route and selectable from the chat UI.
 
 ## Overview
 
-This repo demonstrates two complementary patterns for coordinating LLM agents:
+This repo demonstrates three complementary patterns for coordinating LLM agents:
 
-- **v1 — Orchestrated** (hub-and-spoke): a coordinator agent delegates work to research / writer / editor specialists. Best for content pipelines.
-- **v2 — Choreographed** (peer-to-peer): backend / frontend / design agents run in a round-robin and message each other directly via the bus. Best for cross-discipline collaboration.
+- **v1 — Orchestrated** (hub-and-spoke): a coordinator agent plans a workflow and delegates to research / writer / editor specialists one at a time, then synthesizes the result. Best for content pipelines.
+- **v2 — Choreographed** (peer-to-peer): backend / frontend / design agents run in a round-robin and message each other directly via a per-conversation bus until all mark themselves complete. Best for cross-discipline collaboration. Renders as a visual **build-plan board**.
+- **v3 — Hierarchical** (recursive): a lead agent decomposes the task at runtime by spawning sub-agents, which can spawn their own children (depth-capped). Children run **in parallel**; each parent synthesizes its children's results. Best for open-ended tasks that break into nested subtasks.
 
-For the deep-dive comparison, ASCII diagrams, and trade-offs, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+All three stream live to the UI (agent reasoning, tool calls, web searches), surface **estimated cost** per step and per run, and persist to a localStorage chat history.
+
+Future patterns are tracked as issues — see [v4 Evaluator–Optimizer](https://github.com/MarcusElwin/multi-agents-team/issues/4) and [v5 Debate/Consensus](https://github.com/MarcusElwin/multi-agents-team/issues/5).
 
 ## Architecture
 
@@ -17,12 +20,12 @@ For the deep-dive comparison, ASCII diagrams, and trade-offs, see [`docs/ARCHITE
 
 ```
                         ┌──────────────┐
-            user ─────▶ │ /api/agents  │
+            user ─────▶ │ /api/agents  │  (SSE stream)
                         └──────┬───────┘
                                ▼
                   ┌────────────────────────┐
                   │  AgentOrchestrator     │ ◀── reads bus, builds prompts
-                  │  - LLM-driven routing  │
+                  │  - LLM-driven routing  │     per-run agents w/ event hooks
                   │  - max 15 iterations   │
                   └───────────┬────────────┘
                               ▼
@@ -40,13 +43,13 @@ For the deep-dive comparison, ASCII diagrams, and trade-offs, see [`docs/ARCHITE
 
 ```
                        ┌──────────────────┐
-            user ─────▶│ /api/agents-v2   │
+            user ─────▶│ /api/agents-v2   │  (SSE stream)
                        └────────┬─────────┘
                                 ▼
                   ┌─────────────────────────┐
                   │      AgentRunner        │
                   │  - round-robin schedule │
-                  │  - max 10 iterations    │
+                  │  - inbox-fed prompts    │
                   │  - all-must-complete    │
                   └───────────┬─────────────┘
               ┌───────────────┼───────────────┐
@@ -54,54 +57,78 @@ For the deep-dive comparison, ASCII diagrams, and trade-offs, see [`docs/ARCHITE
         ┌─────────┐     ┌─────────┐     ┌─────────┐
         │ backend │ ◀──▶│frontend │ ◀──▶│ design  │
         └─────────┘     └─────────┘     └─────────┘
-              └─── pub/sub via lib/message-bus.ts ───┘
+              └── pub/sub via per-conversation bus ──┘
 ```
+
+### v3 — Hierarchical (`lib/agents-v3/` + `lib/hierarchical-runner.ts`)
+
+```
+                       ┌──────────────────┐
+            user ─────▶│ /api/agents-v3   │  (SSE stream)
+                       └────────┬─────────┘
+                                ▼
+                       ┌──────────────┐
+                       │     Lead     │  spawnSubAgent() at runtime
+                       └──────┬───────┘
+                ┌─────────────┴─────────────┐
+                ▼                           ▼
+         ┌─────────────┐            ┌─────────────┐
+         │ sub-agent A │            │ sub-agent B │  (run in parallel)
+         └──────┬──────┘            └──────┬──────┘
+            ┌───┴───┐                  ┌───┴───┐
+            ▼       ▼                  ▼       ▼
+          leaf    leaf               leaf    leaf      (depth-capped)
+```
+
+Caps: depth **2**, width **4** per node, **15** total nodes. Each parent runs a synthesis pass over its children's deliverables.
+
+For the deep-dive comparison and trade-offs, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ### Specialized Agents
 
 #### v1 agents
 
-| Agent | Model | Role | Tools |
-|---|---|---|---|
-| **Coordinator** | `gpt-5.5` | Orchestrates the workflow; analyzes requests, delegates, synthesizes results | `analyzeRequest`, `delegateToAgent`, `markComplete` |
-| **Researcher** | `gpt-5.4-mini` | Real-time web search, source validation, structured extraction | `webSearch`, `returnToCoordinator` |
-| **Writer** | `gpt-5.4-mini` | Content creation in multiple formats (blog, article, report) | `formatContent`, `returnToCoordinator` |
-| **Editor** | `gpt-5.4-mini` | Grammar, clarity, polish, final quality assessment | `assessQuality`, `returnToCoordinator` |
+| Agent | Role | Tools |
+|---|---|---|
+| **Coordinator** | Plans the workflow; analyzes requests, delegates, synthesizes results | `analyzeRequest`, `delegateToAgent`, `requestUserInput`, `markComplete` |
+| **Researcher** | Real-time web search, source validation, structured extraction | `webSearch`, `returnToCoordinator` |
+| **Writer** | Content creation in multiple formats (blog, article, report) | `formatContent`, `returnToCoordinator` |
+| **Editor** | Grammar, clarity, polish, final quality assessment | `assessQuality`, `returnToCoordinator` |
 
 #### v2 agents
 
-| Agent | Model | Role | Tools |
-|---|---|---|---|
-| **Backend** | `gpt-5.4-mini` | Backend / API design contributions | `coordinationTool`, `markCompleted` |
-| **Frontend** | `gpt-5.4-mini` | Frontend implementation contributions | `coordinationTool`, `markCompleted` |
-| **Design** | `gpt-5.4-mini` | Product design and UX contributions | `coordinationTool`, `markCompleted` |
+| Agent | Role | Tools |
+|---|---|---|
+| **Backend** | APIs, data models, services | `coordinationTool`, `readMessages`, `markCompleted` |
+| **Frontend** | Components, state, layouts | `coordinationTool`, `readMessages`, `markCompleted` |
+| **Design** | UI/UX, styling, visual guidelines | `coordinationTool`, `readMessages`, `markCompleted` |
+
+#### v3 agents
+
+| Agent | Role | Tools |
+|---|---|---|
+| **Node** (one role-parameterized agent; the lead invents child roles) | Decompose, do focused work, or synthesize | `spawnSubAgent`, `finalize`, and `webSearch` when the role/task is research-y |
+
+Every agent runs on the per-request model (default `gpt-5.5`).
 
 ## Features
 
-### Message Bus Pattern
-- Event-driven architecture for agent communication
-- Full conversation history with metadata
-- Context preservation across handoffs
-- Tool results embedded in messages
-
-### Workflow Management
-- Sequential agent handoffs
-- Context passing between agents
-- Automatic completion detection
-- Structured data flow
-
-### Advanced Capabilities
-- **Web Search Integration**: Real-time information retrieval
-- **Structured Output**: Zod schema-based data extraction
-- **Multi-step Reasoning**: Complex task decomposition
-- **Extensible Tools**: Easy to add new agent capabilities
+- **Three coordination patterns** — orchestrated, choreographed, hierarchical — switchable from the chat UI.
+- **Live streaming** — agent reasoning (`onStepFinish`), tool calls, and web searches stream to the UI as they happen.
+- **Cost estimates** — per-step and per-run token cost (indicative pricing in `lib/models.ts`), shown in the timeline, message meta, and terminal summaries.
+- **Chat history** — conversations persist in localStorage; collapsible sidebar with running indicators; runs continue in the background when you switch chats and write back to their originating chat.
+- **Code preview sidecar** — detects code/JSON in deliverables; a slide-over pane with syntax highlighting, copy, and a **live HTML/React preview** (sandboxed iframe).
+- **Debug stream** — a drawer of every event with pretty-printed JSON and per-event detail.
+- **Human-in-the-loop** — v1 can pause and ask the user a question mid-run.
+- **Per-conversation message bus** — no cross-request state leakage (each `Conversation` owns its own bus).
+- **Styled terminal logs** — `chalk` + `boxen` boxes, a dependency-free spinner, and consistent per-agent output.
 
 ## Tech Stack
 
 - **Framework**: Next.js 16 (App Router)
 - **Runtime**: React 19
 - **AI SDK**: Vercel AI SDK (Experimental Agent API)
-- **LLMs**: OpenAI — default `gpt-5`, picked per-request from a dropdown of 8 models (see Chat UI)
+- **LLMs**: OpenAI — default `gpt-5.5`, picked per-request from a dropdown (see Chat UI)
 - **Validation**: Zod
 - **Styling**: Tailwind CSS 4
 - **UI**: lucide-react icons, custom inline markdown renderer, `chalk` + `boxen` for terminal logs
@@ -112,15 +139,15 @@ For the deep-dive comparison, ASCII diagrams, and trade-offs, see [`docs/ARCHITE
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 20.9+ (Next 16 requires it)
 - pnpm (or npm/yarn)
-- OpenAI API key. The model dropdown defaults to `gpt-5`, so make sure your account has access to that one. Other listed models (`gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5-mini`, `gpt-4.1`, `o4-mini`) will only work if your account/org has them enabled.
+- OpenAI API key. The model dropdown defaults to `gpt-5.5` — ensure your account has access. Other listed ids only work if enabled on your account/org.
 
 ### Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/multi-agents-team.git
+git clone https://github.com/MarcusElwin/multi-agents-team.git
 cd multi-agents-team
 ```
 
@@ -129,14 +156,11 @@ cd multi-agents-team
 pnpm install
 ```
 
-3. Create environment file:
+3. Create environment file and add your key:
 ```bash
 cp .env.example .env.local
-```
-
-4. Add your OpenAI API key to `.env.local`:
-```env
-OPENAI_API_KEY=sk-...
+# then edit .env.local:
+# OPENAI_API_KEY=sk-...
 ```
 
 ### Running the Application
@@ -145,7 +169,7 @@ OPENAI_API_KEY=sk-...
 ```bash
 pnpm dev
 ```
-Open [http://localhost:3000](http://localhost:3000) to view the Next.js app.
+Open [http://localhost:3000](http://localhost:3000) to view the app.
 
 #### Test Agents via CLI
 
@@ -157,17 +181,11 @@ pnpm test:agents
 pnpm test:runner
 ```
 
-`pnpm test:agents` exercises the full v1 collaboration:
-1. User request: "Write a blog post about multi-agent AI systems"
-2. Coordinator analyzes and delegates to Researcher
-3. Researcher searches the web and structures findings
-4. Writer creates a draft blog post
-5. Editor polishes and finalizes content
-6. Coordinator returns final output
+`pnpm test:agents` exercises the full v1 collaboration: the coordinator analyzes the request, delegates to the researcher (which searches the web), then the writer drafts, the editor polishes, and the coordinator returns the final output.
 
 `pnpm test:runner` exercises v2: agents start in random order, message each other through the bus, and the run ends when all three call `markCompleted`.
 
-### Build for Production
+#### Build for Production
 ```bash
 pnpm build
 pnpm start
@@ -175,137 +193,76 @@ pnpm start
 
 ## Chat UI
 
-The app ships with a built-in chat UI at `/` (i.e. `http://localhost:3000` after `pnpm dev`). It mirrors the visual language of the [`agentic-checkout-demo`](../agentic-checkout-demo) app: centered welcome state, suggestion chips, bottom-anchored input with `ArrowUp` send button, rounded message bubbles, lucide icons, and a stone/neutral palette.
+The app ships with a built-in chat UI at `/`. Centered welcome state, suggestion chips, bottom-anchored input, rounded message bubbles, lucide icons, and a stone/neutral palette.
 
 ### Header controls
 
-- **Model selector** (top-right) — dropdown of OpenAI models, mirrored from `agentic-checkout-demo`'s catalog. The selected model is sent with every request and applied to every agent (coordinator + specialists, or backend/frontend/design) for that run.
-- **Mode toggle** — switch between `v1 orchestrated` (coordinator + research/write/edit) and `v2 choreographed` (backend + frontend + design). Routes the request to `/api/agents` or `/api/agents-v2` accordingly.
+- **Model selector** — dropdown of OpenAI models from `lib/models.ts`. The selected model applies to every agent in the run.
+- **Mode toggle** — switch between `v1 orchestrated`, `v2 choreographed`, and `v3 hierarchical`, routing to `/api/agents`, `/api/agents-v2`, or `/api/agents-v3`.
+- **Debug** — opens the live event-stream drawer.
 
 ### Conversation
 
-- **Welcome state** shows mode-aware suggestion chips. Clicking one fires the request immediately.
-- **Thinking indicator** is mode-aware ("Coordinator is dispatching specialists…" vs "Agents are coordinating via the message bus…").
-- **Per-message metadata pills** under each assistant reply show: mode (orchestrated/choreographed), model id, iterations / message count, total duration, and either `agentsUsed` (v1) or per-agent timing + completion checkmarks (v2).
-- **v2 rendering** — since `/api/agents-v2` returns three independent outputs, the assistant message stitches them as `## Backend / ## Frontend / ## Design` markdown sections, each with its own duration/completion badge.
+- **Welcome state** shows mode-aware suggestion chips and a collapsible architecture panel.
+- **Live view while running**:
+  - v1/v2 → an agent **timeline** with expandable rows (live reasoning, tool calls, web searches) and a running cost readout.
+  - v3 → a live **agent tree** that fills in as sub-agents spawn, with per-node status, duration, and cost.
+- **Completed messages**:
+  - v1/v3 → a single synthesized markdown report (long reports collapse; fenced code renders as code blocks; a "View code" button opens the preview pane).
+  - v2 → a **build-plan board**: the goal plus a card per agent with a collapsible deliverable.
+- **Meta pills** under each reply show mode, model, iterations/agents, duration, and estimated cost.
+- **Sidebar** lists past conversations (localStorage), grouped by recency, with a running dot for in-flight runs.
 
 ### Available models
 
-The dropdown lists the following (from `lib/models.ts`):
+From `lib/models.ts`:
 
 | Model | Description |
 |---|---|
-| `gpt-5.5` | Highest quality (verify access) |
-| `gpt-5.4` | Balanced flagship (verify access) |
-| `gpt-5.4-mini` | Fast (verify access) |
-| `gpt-5.4-nano` | Fastest, cheapest (verify access) |
-| `gpt-5` | **Default.** Reliable general purpose |
-| `gpt-5-mini` | Fast and cheap |
+| `gpt-5.5` | **Default.** Flagship — best for coding & reasoning |
+| `gpt-5.4` | More affordable flagship-class |
+| `gpt-5.4-mini` | Strong mini — fast, lower cost |
+| `gpt-5.4-nano` | Fastest, most cost-efficient |
 | `gpt-4.1` | Legacy fallback |
 | `o4-mini` | Reasoning, lightweight |
 
-> **⚠️ Caveat:** the dropdown lets you pick any of these, but if the model id isn't enabled on your OpenAI account/org you'll get a 4xx error in the chat. The list intentionally mirrors what the `agentic-checkout-demo` UI exposes — it is **not** a guarantee that every id is callable. Verify with `curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY"` if a request fails.
-
-The default (`gpt-5`) is also what every CLI script (`pnpm test:agents`, `pnpm test:runner`) uses when no model override is supplied.
+> **⚠️ Caveat:** picking a model id that isn't enabled on your OpenAI account/org returns a 4xx in the chat. Unknown/unavailable values passed to the API fall back to the default. Verify access with `curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY"`.
 
 ## API Routes
 
-Both architectures are exposed as REST endpoints. Pick the one that fits your task.
+All three architectures are exposed as **Server-Sent Events** endpoints (`Content-Type: text/event-stream`). Each `data:` frame is a JSON `AgentEvent` (see `lib/agent-events.ts`); the run ends with a `workflow_complete` (or `workflow_error`) event. `model` and `history` are optional in the request body.
 
-### v1 — Orchestrated
-
-#### POST `/api/agents`
+### POST `/api/agents` (v1, max 60s)
 
 ```bash
-curl -X POST http://localhost:3000/api/agents \
+curl -N -X POST http://localhost:3000/api/agents \
   -H "Content-Type: application/json" \
-  -d '{"message": "Write a blog post about AI agents", "model": "gpt-5"}'
+  -d '{"message": "Write a blog post about AI agents", "model": "gpt-5.5"}'
 ```
 
-`model` is optional — omit it to use the default (`gpt-5`). Unknown values fall back to the default rather than erroring.
+Streams `workflow_start`, `iteration_start`/`iteration_end`, `agent_step`, `tool_call`, `web_search`, `agent_plan`, `bus_message`, `handoff`, and finally `workflow_complete` with the synthesized `result`.
 
-Response:
-```json
-{
-  "success": true,
-  "model": "gpt-5",
-  "result": "Final polished content from the workflow...",
-  "messageHistory": [...],
-  "totalMessages": 15,
-  "agentsUsed": ["coordinator", "researcherAgent", "writerAgent", "editorAgent"]
-}
-```
-
-- 60-second max duration
-- One synthesized final string + full message history
-- The chosen `model` applies to every agent in the run
-
-#### GET `/api/agents`
+### POST `/api/agents-v2` (v2, max 120s)
 
 ```bash
-curl http://localhost:3000/api/agents
-```
-
-```json
-{
-  "status": "ready",
-  "agents": ["coordinator", "researcherAgent", "writerAgent", "editorAgent"],
-  "messageBusActive": true
-}
-```
-
-### v2 — Choreographed
-
-#### POST `/api/agents-v2`
-
-```bash
-curl -X POST http://localhost:3000/api/agents-v2 \
+curl -N -X POST http://localhost:3000/api/agents-v2 \
   -H "Content-Type: application/json" \
-  -d '{"message": "Design and build a task management feature with priorities, assignment, and notifications", "model": "gpt-5"}'
+  -d '{"message": "Design a notification preferences settings page"}'
 ```
 
-`model` is optional — same fallback behavior as v1.
+Streams per-agent `iteration_*` events and ends with `workflow_complete` carrying `agentResults` (one deliverable per agent, deduped to the latest).
 
-Response:
-```json
-{
-  "success": true,
-  "model": "gpt-5",
-  "userQuery": "...",
-  "startingAgent": "designAgent",
-  "iterations": 5,
-  "totalDuration": 28341,
-  "agentResults": [
-    { "agent": "designAgent",   "output": "...", "duration": 9120, "completed": true },
-    { "agent": "backendAgent",  "output": "...", "duration": 8410, "completed": true },
-    { "agent": "frontendAgent", "output": "...", "duration": 9540, "completed": true }
-  ],
-  "coordinationMessages": [...],
-  "messageBusStats": { "totalMessages": 17, "uniqueAgents": [...] }
-}
-```
-
-- 120-second max duration (three agents serially)
-- Per-agent outputs + coordination log + bus stats
-- The chosen `model` applies to all three agents
-
-#### GET `/api/agents-v2`
+### POST `/api/agents-v3` (v3, max 300s)
 
 ```bash
-curl http://localhost:3000/api/agents-v2
+curl -N -X POST http://localhost:3000/api/agents-v3 \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Plan and build a habit-tracker app: research, data model, API, and a UI component"}'
 ```
 
-```json
-{
-  "status": "ready",
-  "pattern": "choreography (peer-to-peer, round-robin)",
-  "agents": ["backendAgent", "frontendAgent", "designAgent"],
-  "messageBusActive": true,
-  "currentBusStats": {...}
-}
-```
+Streams `agent_spawn` events (building the tree) plus `iteration_*`, and ends with `workflow_complete` carrying the lead's synthesized `result`.
 
-> **Note:** the `messageBus` is a process-wide singleton, so concurrent v2 requests will clobber each other's state. Fine for development; for production you'd want per-request bus instances.
+Each route also has a `GET` returning a small readiness/status object.
 
 ## Project Structure
 
@@ -313,269 +270,130 @@ curl http://localhost:3000/api/agents-v2
 multi-agents-team/
 ├── app/
 │   ├── api/
-│   │   ├── agents/
-│   │   │   └── route.ts             # v1 (orchestrated) endpoint
-│   │   └── agents-v2/
-│   │       └── route.ts             # v2 (choreographed) endpoint
+│   │   ├── agents/route.ts            # v1 (orchestrated) SSE endpoint
+│   │   ├── agents/input/route.ts      # human-in-the-loop answer delivery
+│   │   ├── agents-v2/route.ts         # v2 (choreographed) SSE endpoint
+│   │   └── agents-v3/route.ts         # v3 (hierarchical) SSE endpoint
 │   ├── components/
-│   │   ├── MarkdownContent.tsx      # inline markdown renderer
-│   │   └── ModelSelector.tsx        # OpenAI model dropdown
+│   │   ├── AgentTimeline.tsx          # v1/v2 live timeline (expandable rows)
+│   │   ├── AgentTree.tsx              # v3 live hierarchical tree
+│   │   ├── ArchitecturePanel.tsx      # collapsible per-mode diagram
+│   │   ├── BuildPlan.tsx              # v2 build-plan board
+│   │   ├── ChatSidebar.tsx            # localStorage chat history
+│   │   ├── CodePreview.tsx            # code/JSON pane + live HTML/React preview
+│   │   ├── DebugDrawer.tsx            # live event stream
+│   │   ├── InputRequestCard.tsx       # human-in-the-loop prompt
+│   │   ├── MarkdownContent.tsx        # inline markdown renderer
+│   │   ├── ModeSelector.tsx           # v1/v2/v3 toggle
+│   │   └── ModelSelector.tsx          # OpenAI model dropdown
+│   ├── hooks/
+│   │   └── useConversations.ts        # localStorage-backed chat store
 │   ├── layout.tsx
-│   └── page.tsx                     # full chat UI (welcome + conversation)
+│   └── page.tsx                       # full chat UI
 ├── lib/
-│   ├── agents/                       # v1 agents (factories + back-compat singletons)
-│   │   ├── coordinator-agent.ts
-│   │   ├── researcher-agent.ts
-│   │   ├── writer-agent.ts
-│   │   ├── editor-agent.ts
-│   │   └── index.ts
-│   ├── agents-v2/                    # v2 agents (same shape)
-│   │   ├── backend.ts
-│   │   ├── frontend.ts
-│   │   └── design.ts
+│   ├── agents/                        # v1 agents (factory functions)
+│   ├── agents-v2/                     # v2 agents (backend/frontend/design)
+│   ├── agents-v3/
+│   │   └── node-agent.ts              # role-parameterized hierarchical node
+│   ├── tools/
+│   │   └── web-search.ts              # reusable web-search tool
 │   ├── utils/
-│   │   └── cn.ts                     # clsx + tailwind-merge
-│   ├── logger.ts                     # chalk/boxen terminal logger
-│   ├── message-bus.ts                # shared pub/sub bus
-│   ├── models.ts                     # OpenAI model catalog + resolveModel()
-│   ├── orchestrator.ts               # v1 hub-and-spoke orchestrator
-│   └── runner.ts                     # v2 round-robin runner
+│   │   ├── cn.ts                      # clsx + tailwind-merge
+│   │   └── extract-code.ts            # code-block extraction + preview docs
+│   ├── agent-events.ts                # AgentEvent union + AgentHooks
+│   ├── conversation.ts                # per-run Conversation (owns its bus)
+│   ├── logger.ts                      # chalk/boxen logger + spinner
+│   ├── message-bus.ts                 # per-conversation pub/sub bus
+│   ├── models.ts                      # model catalog, pricing, cost helpers
+│   ├── modes.ts                       # v1/v2/v3 mode specs
+│   ├── orchestrator.ts                # v1 hub-and-spoke orchestrator
+│   ├── runner.ts                      # v2 round-robin runner
+│   └── hierarchical-runner.ts         # v3 recursive runner
 ├── scripts/
-│   ├── test-agents.ts                # CLI test for v1
-│   └── test-runner.ts                # CLI test for v2
+│   ├── test-agents.ts                 # CLI test for v1
+│   └── test-runner.ts                 # CLI test for v2
 ├── docs/
-│   └── ARCHITECTURE.md               # deep-dive on both architectures
-├── package.json
-├── tsconfig.json
-├── next.config.ts
+│   └── ARCHITECTURE.md                # deep-dive on the architectures
 └── README.md
-```
-
-## Usage Examples
-
-### Using the API
-
-```typescript
-// Example: Trigger workflow from frontend
-async function runAgentWorkflow(userMessage: string) {
-  const response = await fetch('/api/agents', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: userMessage })
-  });
-
-  const data = await response.json();
-  console.log('Result:', data.result);
-  console.log('Agents used:', data.agentsUsed);
-  console.log('Total messages:', data.totalMessages);
-
-  return data;
-}
-
-// Use it
-await runAgentWorkflow("Research and write about quantum computing");
-```
-
-### Using Orchestrator Directly
-
-```typescript
-import { AgentOrchestrator } from '@/lib/orchestrator';
-import { messageBus } from '@/lib/message-bus';
-
-const orchestrator = new AgentOrchestrator(messageBus);
-const result = await orchestrator.processUserMessage(
-  "Write a technical report on neural networks"
-);
-
-// Get workflow statistics
-const stats = orchestrator.getConversationSummary();
-console.log('Agents involved:', stats.agentsInvolved);
-console.log('Total messages:', stats.totalMessages);
-```
-
-### CLI Testing
-
-```bash
-# Run the test suite
-pnpm test:agents
-
-# Customize test cases in scripts/test-agents.ts
-const testCases = [
-  {
-    name: 'Research Only',
-    message: "Research the latest AI trends"
-  },
-  {
-    name: 'Full Workflow',
-    message: "Write a comprehensive guide on LLMs"
-  }
-];
-```
-
-## How It Works
-
-### Workflow Example
-
-```typescript
-// User request
-const userMessage = "Write a blog post about multi-agent AI systems";
-
-// 1. Coordinator analyzes
-coordinator.analyzeRequest({
-  userIntent: "Create blog content",
-  selectedAgents: [
-    { agent: 'researcherAgent', task: 'Research multi-agent systems', order: 1 },
-    { agent: 'writerAgent', task: 'Write blog post', order: 2 },
-    { agent: 'editorAgent', task: 'Polish content', order: 3 }
-  ]
-});
-
-// 2. Researcher gathers info
-researcher.webSearch({
-  query: "multi-agent AI systems benefits",
-  extractionGoal: "key benefits and use cases"
-});
-
-// 3. Writer creates content
-writer.formatContent({
-  content: researchFindings,
-  style: 'blog'
-});
-
-// 4. Editor polishes
-editor.assessQuality({ content: draft });
-
-// 5. Coordinator marks complete
-coordinator.markComplete({ finalResponse: polishedContent });
 ```
 
 ## Configuration
 
-### Agent Models
+### Models & cost
 
-Each agent ships as both a default singleton **and** a factory function so you can override the model per request:
+The catalog, default, and indicative pricing live in `lib/models.ts`:
 
 ```typescript
-// Default singletons (use DEFAULT_MODEL = 'gpt-5')
-export const coordinatorAgent = createCoordinatorAgent();
-export const researcherAgent = createResearcherAgent();
+export const DEFAULT_MODEL: OpenAIModel = 'gpt-5.5';
+export const MODEL_OPTIONS = [...];           // see "Available models"
+export const MODEL_PRICING: Record<OpenAIModel, { input: number; output: number }>;
+export function resolveModel(input?: string): OpenAIModel;  // safe, with fallback
+export function estimateCost(model, usage): number;          // USD
+```
 
-// Per-request override
+Every agent ships as a **factory function** so the runners can rebuild it per request with the chosen model and event hooks:
+
+```typescript
 import { createCoordinatorAgent } from '@/lib/agents';
-const fastCoordinator = createCoordinatorAgent('gpt-5-mini');
+const agent = createCoordinatorAgent('gpt-5.4-mini', hooks);
 ```
 
-The catalog and default live in `lib/models.ts`:
+The orchestrator/runners accept `{ model }` and wire per-run event hooks internally:
 
 ```typescript
-export const DEFAULT_MODEL: OpenAIModel = 'gpt-5';
-export const MODEL_OPTIONS = [...]; // see "Available models" above
-export function resolveModel(input?: string): OpenAIModel; // safe, with fallback
-```
-
-`AgentOrchestrator` and `AgentRunner` both accept `{ model }` in their constructor / convenience function — when set to anything other than `DEFAULT_MODEL`, they rebuild every agent with the chosen model:
-
-```typescript
-new AgentOrchestrator(messageBus, { model: 'gpt-5-mini' });
+new AgentOrchestrator({ model: 'gpt-5.4-mini' });
 runAgentsWithCoordination('build a thing', { model: 'gpt-5.4-mini' });
+runHierarchical('research and build X', { model: 'gpt-5.5' });
 ```
 
-### Max Iterations
+### Caps & timeouts
 
-- v1 — `lib/orchestrator.ts`: `const maxIterations = 15`
-- v2 — `lib/runner.ts`: `private maxIterations = 10`
-
-### API Timeout
-
-- v1 — `app/api/agents/route.ts`: `export const maxDuration = 60`
-- v2 — `app/api/agents-v2/route.ts`: `export const maxDuration = 120`
+| | v1 | v2 | v3 |
+|---|---|---|---|
+| Iteration / node cap | `maxIterations = 15` | `maxIterations = 10` | depth 2 · width 4 · 15 nodes |
+| API `maxDuration` | 60s | 120s | 300s |
 
 ## Extending the System
 
-### Adding a New Agent
+### Adding a new mode
 
-1. Create agent file in `lib/agents/`:
+PR-level reference: the v3 PR adds a mode end-to-end. The pieces are:
 
-```typescript
-// lib/agents/fact-checker-agent.ts
-export const factCheckerAgent = new Agent({
-  model: openai('gpt-4.1'),
-  system: `You are a fact-checking specialist...`,
-  tools: {
-    verifyFact: tool({ /* ... */ }),
-    returnToCoordinator: tool({ /* ... */ })
-  }
-});
-```
+1. Agents in `lib/agents-vN/` (factory functions taking `(model, hooks)`).
+2. A runner in `lib/` that drives the loop and emits `AgentEvent`s.
+3. An SSE route at `app/api/agents-vN/route.ts`.
+4. Any new event variants in `lib/agent-events.ts` (and widen the `mode` unions).
+5. A `MODES.vN` spec in `lib/modes.ts` (label, diagram, suggestions).
+6. UI wiring in `app/page.tsx` (+ a render component if the output shape is new).
 
-2. Add to `lib/agents/index.ts`:
-```typescript
-export { factCheckerAgent } from './fact-checker-agent';
-```
-
-3. Update orchestrator types and routing
-
-### Adding a New Tool
+### Adding a tool
 
 ```typescript
-// In any agent file
 tools: {
-  yourNewTool: tool({
+  yourTool: tool({
     description: 'What this tool does',
-    inputSchema: z.object({
-      param: z.string()
-    }),
-    execute: async ({ param }) => {
-      // Tool logic
-      return { result: 'value' };
-    }
-  })
+    inputSchema: z.object({ param: z.string() }),
+    execute: async ({ param }) => ({ result: 'value' }),
+  }),
 }
 ```
 
+For shared tools (like `lib/tools/web-search.ts`), export a `makeXTool(model, hooks)` factory so it can emit hook events into the live run.
+
 ## Troubleshooting
 
-### Common Issues
-
-1. **"OPENAI_API_KEY not found"**
-   - Ensure `.env.local` exists with valid API key
-   - Restart dev server after adding env vars
-
-2. **Agent timeouts**
-   - Check network connection
-   - Verify OpenAI API status
-   - Increase `maxIterations` if needed
-
-3. **Workflow incomplete**
-   - Check agent logs for errors
-   - Verify tool schemas match expected inputs
-   - Review message bus history for handoff issues
-
-4. **API timeout (Vercel)**
-   - Workflows exceeding 60s will timeout on Vercel
-   - Consider using serverless functions with longer timeouts
-   - Or implement streaming responses
-
-## Performance Considerations
-
-- **Token Usage**: Each agent interaction consumes tokens. Monitor via OpenAI dashboard.
-- **Latency**: Web searches and multiple agent hops add latency (typically 10-30s for full workflow)
-- **Rate Limits**: OpenAI API rate limits apply
-- **Caching**: Message bus maintains full history (consider cleanup for long sessions)
+- **"OPENAI_API_KEY not found"** — ensure `.env.local` exists; restart the dev server after adding env vars.
+- **4xx on a request** — the chosen model id isn't enabled on your account; pick another or verify access.
+- **Node version error** — Next 16 needs Node ≥ 20.9 (`nvm use 20`).
+- **Run hits the cap** — v2/v3 can reach their iteration/node caps on very open-ended prompts; tighten the prompt or raise the cap.
+- **Cost shows $0** — the AI SDK didn't return token `usage` for that call; estimates depend on it. Pricing is indicative, not billing-accurate.
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme).
-
 ```bash
-# Install Vercel CLI
 npm i -g vercel
-
-# Deploy
 vercel
-
-# Add environment variables in Vercel dashboard
-# Settings → Environment Variables → Add OPENAI_API_KEY
+# Settings → Environment Variables → add OPENAI_API_KEY
 ```
 
 ## License

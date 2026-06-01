@@ -364,6 +364,13 @@ function eventMeta(event: AgentEvent): {
         headline: `${event.agent} needs input`,
         subline: event.question,
       };
+    case 'agent_spawn':
+      return {
+        tag: `spawn d${event.depth}`,
+        tone: 'border-yellow-200 bg-yellow-50 text-yellow-700',
+        headline: `${event.role}${event.parentId ? ` (child of ${event.parentId})` : ' (root)'}`,
+        subline: event.task,
+      };
     case 'agent_step':
       return {
         tag: 'step',

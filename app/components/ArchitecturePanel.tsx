@@ -1,6 +1,7 @@
 'use client';
 
-import { ArrowRight, ArrowLeftRight } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowRight, ArrowLeftRight, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { MODES, type Mode } from '@/lib/modes';
 
@@ -8,33 +9,70 @@ import { MODES, type Mode } from '@/lib/modes';
  * Visual hierarchy + capability descriptions for the selected agentic system.
  * v1 (orchestrated) renders as a top-down coordinator → specialists tree;
  * v2 (choreographed) renders as peers on a shared bus. Demo-facing.
+ *
+ * When `collapsible`, the header becomes a toggle and the body (diagram +
+ * agent list) expands/collapses. `defaultOpen` controls the initial state.
  */
-export function ArchitecturePanel({ mode, className }: { mode: Mode; className?: string }) {
+export function ArchitecturePanel({
+  mode,
+  className,
+  collapsible = false,
+  defaultOpen = false,
+}: {
+  mode: Mode;
+  className?: string;
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+}) {
   const spec = MODES[mode];
+  const [open, setOpen] = useState(collapsible ? defaultOpen : true);
+
+  const header = (
+    <div className="flex items-center gap-2">
+      {collapsible && (
+        <ChevronDown
+          className={cn('h-4 w-4 shrink-0 text-stone-400 transition-transform', !open && '-rotate-90')}
+        />
+      )}
+      <spec.icon className="h-4 w-4 text-stone-600" />
+      <h2 className="text-sm font-semibold text-stone-900">{spec.pattern} architecture</h2>
+      <span className="ml-auto rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-medium text-stone-500">
+        {spec.label}
+      </span>
+    </div>
+  );
 
   return (
-    <div className={cn('rounded-2xl border border-stone-200 bg-white p-5', className)}>
-      <div className="mb-1 flex items-center gap-2">
-        <spec.icon className="h-4 w-4 text-stone-600" />
-        <h2 className="text-sm font-semibold text-stone-900">
-          {spec.pattern} architecture
-        </h2>
-        <span className="ml-auto rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-medium text-stone-500">
-          {spec.label}
-        </span>
-      </div>
-      <p className="mb-5 text-xs leading-relaxed text-stone-500">{spec.description}</p>
+    <div className={cn('rounded-2xl border border-stone-200 bg-white', className)}>
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-full items-center px-5 py-4 text-left"
+          aria-expanded={open}
+        >
+          {header}
+        </button>
+      ) : (
+        <div className="px-5 pt-5">{header}</div>
+      )}
 
-      {mode === 'v1' ? <OrchestratedDiagram /> : <ChoreographedDiagram />}
+      {open && (
+        <div className={cn('px-5 pb-5', collapsible ? 'pt-0' : 'pt-1')}>
+          <p className="mb-5 text-xs leading-relaxed text-stone-500">{spec.description}</p>
 
-      <div className="mt-5 space-y-2 border-t border-stone-100 pt-4">
-        {spec.agents.map((a) => (
-          <div key={a.id} className="flex items-baseline gap-2 text-xs">
-            <span className="w-20 shrink-0 font-medium text-stone-800">{a.name}</span>
-            <span className="text-stone-500">{a.role}</span>
+          {mode === 'v1' ? <OrchestratedDiagram /> : <ChoreographedDiagram />}
+
+          <div className="mt-5 space-y-2 border-t border-stone-100 pt-4">
+            {spec.agents.map((a) => (
+              <div key={a.id} className="flex items-baseline gap-2 text-xs">
+                <span className="w-20 shrink-0 font-medium text-stone-800">{a.name}</span>
+                <span className="text-stone-500">{a.role}</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

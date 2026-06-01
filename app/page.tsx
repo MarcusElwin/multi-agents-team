@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, type FormEvent } from 'react';
-import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug } from 'lucide-react';
+import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { DEFAULT_MODEL, type OpenAIModel } from '@/lib/models';
 import { MODES, type Mode, prettyAgentName } from '@/lib/modes';
@@ -12,21 +12,13 @@ import { AgentTimeline, type LiveAgent } from './components/AgentTimeline';
 import { ArchitecturePanel } from './components/ArchitecturePanel';
 import { InputRequestCard } from './components/InputRequestCard';
 import { DebugDrawer } from './components/DebugDrawer';
+import { ChatSidebar } from './components/ChatSidebar';
+import { useConversations, type StoredMessage } from './hooks/useConversations';
 import type { AgentEvent } from '@/lib/agent-events';
 
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  meta?: {
-    mode: Mode;
-    model?: string;
-    agentsUsed?: string[];
-    iterations?: number;
-    totalDuration?: number;
-    perAgent?: Array<{ agent: string; duration: number; completed: boolean }>;
-  };
-}
+// The on-screen message shape is exactly what we persist, so reuse it to keep
+// the rendered chat and stored history from drifting.
+type ChatMessage = StoredMessage;
 
 interface PlanStep {
   agent: string;
@@ -57,11 +49,81 @@ export default function Home() {
   const [model, setModel] = useState<OpenAIModel>(DEFAULT_MODEL);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  // live holds the streaming timeline for the chat currently on screen. It maps
+  // 1:1 to liveRunId — when you switch chats, we swap or clear it.
   const [live, setLive] = useState<LiveRun>(emptyRun);
+  const [liveRunId, setLiveRunId] = useState<string | null>(null);
   const [debugOpen, setDebugOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const {
+    conversations,
+    activeId,
+    activeConversation,
+    newConversation,
+    selectConversation,
+    deleteConversation,
+    upsertConversation,
+    updateConversation,
+  } = useConversations();
+
+  // Runs in flight, keyed by the chat id they belong to. A run keeps streaming
+  // in the background after you switch away; its result lands back on its chat.
+  const runsRef = useRef<Map<string, AbortController>>(new Map());
+  // Which chat ids currently have a run in flight (drives sidebar dots + the
+  // "is the viewed chat running" loading state). A piece of state so the UI
+  // re-renders as runs start/stop.
+  const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
+
+  // The chat on screen is "loading" only if ITS run is in flight. A run for
+  // another chat streams in the background without showing a spinner here.
+  const isLoading = activeId != null && runningIds.has(activeId);
+
+  const markRunning = (id: string, running: boolean) =>
+    setRunningIds((prev) => {
+      const next = new Set(prev);
+      if (running) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  // Always-current viewed chat id, read inside streaming closures (which would
+  // otherwise capture a stale activeId). Updated synchronously below.
+  const viewedIdRef = useRef<string | null>(null);
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // When the active conversation changes (switch or hydrate), load its stored
+  // messages and the mode/model it was held in. Runs keep going in the
+  // background, so we never block this on a run being in flight — we just don't
+  // carry another chat's live timeline over. A null active id means "new chat".
+  const loadedId = useRef<string | null>(null);
+  useEffect(() => {
+    viewedIdRef.current = activeId;
+    if (activeId === loadedId.current) return;
+    loadedId.current = activeId;
+    if (activeConversation) {
+      setMessages(activeConversation.messages);
+      setMode(activeConversation.mode);
+      setModel(activeConversation.model as OpenAIModel);
+    } else {
+      setMessages([]);
+    }
+    // Only keep the live timeline if it belongs to the chat we're switching to.
+    if (liveRunId !== activeId) setLive(emptyRun());
+  }, [activeId, activeConversation, liveRunId]);
+
+  function startNewChat() {
+    // Leave any in-flight run alone — it streams in the background and writes
+    // back to its own chat. Just clear the view to the empty welcome state.
+    loadedId.current = null;
+    newConversation();
+    setMessages([]);
+    setLive(emptyRun());
+    setLiveRunId(null);
+    setInput('');
+  }
 
   useEffect(() => {
     if (!scrollRef.current) return;
@@ -92,6 +154,8 @@ export default function Home() {
         status: 'pending' as const,
         toolCalls: [],
         outbound: 0,
+        steps: [],
+        searches: [],
       };
       next.agents.set(name, { ...existing, ...patch });
     };
@@ -133,6 +197,33 @@ export default function Home() {
         }
         break;
       }
+      case 'agent_step': {
+        const existing = next.agents.get(event.agent);
+        upsert(event.agent, {
+          steps: [
+            ...(existing?.steps ?? []),
+            { stepIndex: event.stepIndex, text: event.text, toolNames: event.toolNames },
+          ],
+        });
+        break;
+      }
+      case 'web_search': {
+        const existing = next.agents.get(event.agent);
+        const searches = [...(existing?.searches ?? [])];
+        if (event.status === 'start') {
+          searches.push({ query: event.query, status: 'start' });
+        } else {
+          // Mark the matching pending search done; fall back to appending.
+          const idx = searches.findLastIndex(
+            (s) => s.query === event.query && s.status === 'start',
+          );
+          const done = { query: event.query, status: 'done' as const, sources: event.sources };
+          if (idx >= 0) searches[idx] = done;
+          else searches.push(done);
+        }
+        upsert(event.agent, { searches });
+        break;
+      }
       case 'handoff':
         next.currentAgent = event.to;
         break;
@@ -156,6 +247,8 @@ export default function Home() {
 
   async function send(text: string) {
     const trimmed = text.trim();
+    // Only block if the chat we're viewing is already running; a different
+    // chat's run streaming in the background is fine.
     if (!trimmed || isLoading) return;
 
     const userMsg: ChatMessage = {
@@ -163,23 +256,51 @@ export default function Home() {
       role: 'user',
       content: trimmed,
     };
-    setMessages((m) => [...m, userMsg]);
+
+    // Bind this run to a chat id up front: reuse the active chat, or mint a new
+    // one. Persist immediately (status 'running') so the chat shows in the
+    // sidebar and the run "belongs" to it before any result exists.
+    const priorMessages = messages;
+    const withUser = [...priorMessages, userMsg];
+    const runId = upsertConversation({
+      id: activeId ?? undefined,
+      messages: withUser,
+      mode,
+      model,
+      status: 'running',
+      now: Date.now(),
+      activate: true,
+    });
+    loadedId.current = runId; // we just activated runId; don't re-load over it
+    viewedIdRef.current = runId;
+
+    // Reflect on screen (we are viewing this chat right after send).
+    setMessages(withUser);
     setInput('');
-    setIsLoading(true);
     setLive(emptyRun());
+    setLiveRunId(runId);
+    markRunning(runId, true);
 
     const endpoint = MODES[mode].endpoint;
     // Prior turns become the agents' memory. Snapshot before appending this turn.
-    const history = messages.map((m) => ({ role: m.role, content: m.content }));
+    const history = priorMessages.map((m) => ({ role: m.role, content: m.content }));
     let finalEvent: Extract<AgentEvent, { type: 'workflow_complete' }> | null = null;
     let errorEvent: Extract<AgentEvent, { type: 'workflow_error' }> | null = null;
-    const collectedEvents: AgentEvent[] = [];
+
+    const controller = new AbortController();
+    runsRef.current.set(runId, controller);
+
+    // Only paint the live timeline while THIS run's chat is the one on screen.
+    const renderLive = (event: AgentEvent) => {
+      if (viewedIdRef.current === runId) setLive((prev) => applyEvent(prev, event));
+    };
 
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: trimmed, model, history }),
+        signal: controller.signal,
       });
 
       if (!res.ok || !res.body) {
@@ -208,10 +329,9 @@ export default function Home() {
           if (!payload) continue;
           try {
             const event = JSON.parse(payload) as AgentEvent;
-            collectedEvents.push(event);
             if (event.type === 'workflow_complete') finalEvent = event;
             if (event.type === 'workflow_error') errorEvent = event;
-            setLive((prev) => applyEvent(prev, event));
+            renderLive(event);
           } catch {
             // skip malformed frame
           }
@@ -223,19 +343,27 @@ export default function Home() {
       }
 
       const assistantMsg = buildAssistantMessage(model, finalEvent);
-      setMessages((m) => [...m, assistantMsg]);
+      const updated = [...withUser, assistantMsg];
+      // Write the result back to THIS run's chat, wherever the user is now.
+      updateConversation(runId, { messages: updated, status: 'idle', updatedAt: Date.now() });
+      // Only touch the visible transcript if we're still viewing this chat.
+      if (viewedIdRef.current === runId) setMessages(updated);
     } catch (e) {
+      if (controller.signal.aborted) return; // deliberate cancel (e.g. delete)
       const err = e instanceof Error ? e.message : 'Unknown error';
-      setMessages((m) => [
-        ...m,
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: `**Error:** ${err}`,
-        },
-      ]);
+      const errorMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `**Error:** ${err}`,
+      };
+      const updated = [...withUser, errorMsg];
+      updateConversation(runId, { messages: updated, status: 'error', updatedAt: Date.now() });
+      if (viewedIdRef.current === runId) setMessages(updated);
     } finally {
-      setIsLoading(false);
+      runsRef.current.delete(runId);
+      markRunning(runId, false);
+      // Drop the live timeline only if this run still owns it.
+      setLiveRunId((cur) => (cur === runId ? null : cur));
     }
   }
 
@@ -259,12 +387,38 @@ export default function Home() {
     }
   }
 
+  // Switching chats leaves any running research alone (it streams in the
+  // background and writes back to its own chat). We just change what's viewed.
+  function handleSelectConversation(id: string) {
+    if (id === activeId) return;
+    selectConversation(id);
+  }
+
+  // Deleting a chat aborts its run if one is in flight, then removes it.
+  function handleDeleteConversation(id: string) {
+    runsRef.current.get(id)?.abort();
+    runsRef.current.delete(id);
+    markRunning(id, false);
+    deleteConversation(id);
+  }
+
   const hasMessages = messages.length > 0;
   const spec = MODES[mode];
   const liveAgents = Array.from(live.agents.values());
 
   return (
-    <div className="flex h-screen flex-col bg-stone-50 text-stone-900">
+    <div className="flex h-screen bg-stone-50 text-stone-900">
+      <ChatSidebar
+        conversations={conversations}
+        activeId={activeId}
+        runningIds={runningIds}
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed((v) => !v)}
+        onNew={startNewChat}
+        onSelect={handleSelectConversation}
+        onDelete={handleDeleteConversation}
+      />
+      <div className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-stone-200 bg-white/70 px-4 backdrop-blur">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-900 text-white">
@@ -317,7 +471,7 @@ export default function Home() {
                 ))}
               </div>
 
-              <ArchitecturePanel mode={mode} className="mt-10" />
+              <ArchitecturePanel mode={mode} collapsible defaultOpen={false} className="mt-10" />
             </div>
           </div>
         ) : (
@@ -365,6 +519,7 @@ export default function Home() {
           </>
         )}
       </main>
+      </div>
 
       <DebugDrawer
         open={debugOpen}
@@ -531,8 +686,17 @@ function InputArea({
   );
 }
 
+// Assistant reports longer than this collapse to a preview with a "Show full
+// report" toggle, so a multi-section answer doesn't bury the conversation.
+const REPORT_COLLAPSE_THRESHOLD = 1200;
+
 function MessageRow({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user';
+  const isLongReport = !isUser && message.content.length > REPORT_COLLAPSE_THRESHOLD;
+  // Long reports start collapsed; short ones and user messages always show full.
+  const [expanded, setExpanded] = useState(false);
+  const showCollapsed = isLongReport && !expanded;
+
   return (
     <div
       className={cn(
@@ -562,7 +726,22 @@ function MessageRow({ message }: { message: ChatMessage }) {
               : 'bg-white border border-stone-200 text-stone-900'
           )}
         >
-          <MarkdownContent content={message.content} />
+          <div className={cn('relative', showCollapsed && 'max-h-72 overflow-hidden')}>
+            <MarkdownContent content={message.content} />
+            {showCollapsed && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white to-transparent" />
+            )}
+          </div>
+          {isLongReport && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-stone-500 hover:text-stone-900"
+            >
+              <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
+              {expanded ? 'Collapse report' : 'Show full report'}
+            </button>
+          )}
         </div>
         {message.meta && <MetaBar meta={message.meta} />}
       </div>

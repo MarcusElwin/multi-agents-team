@@ -61,6 +61,34 @@ export const MarkdownContent = memo(function MarkdownContent({
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
+      // Fenced code block: ```lang … ``` — accumulate until the closing fence
+      // and render as a monospace block (fences stripped). Must run before the
+      // list/heading checks so code content isn't mangled as prose.
+      const fence = line.match(/^```([\w.+-]*)\s*$/);
+      if (fence) {
+        if (inList) flushList();
+        const lang = fence[1];
+        const codeLines: string[] = [];
+        i++;
+        while (i < lines.length && !/^```\s*$/.test(lines[i])) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        // i now points at the closing fence (or end of input); the for-loop ++ skips it.
+        out.push(
+          <pre
+            key={`code-${i}`}
+            className="my-2 overflow-x-auto rounded-lg bg-stone-950 px-3 py-2 text-[12px] leading-relaxed text-stone-100 [scrollbar-width:thin]"
+          >
+            {lang && (
+              <div className="mb-1 font-mono text-[10px] uppercase tracking-wide text-stone-500">{lang}</div>
+            )}
+            <code className="whitespace-pre font-mono">{codeLines.join('\n')}</code>
+          </pre>
+        );
+        continue;
+      }
+
       if (/^[-*]\s/.test(line)) {
         inList = true;
         listItems.push(line.replace(/^[-*]\s/, ''));

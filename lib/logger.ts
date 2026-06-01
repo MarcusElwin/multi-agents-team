@@ -119,6 +119,70 @@ export function kv(pairs: Record<string, string | number>) {
   }
 }
 
+/** A search/tool sub-step line, with an emphasized label and dim value. */
+export function detail(label: string, value: string) {
+  console.log(chalk.gray('     ') + chalk.cyan(label) + chalk.gray(': ') + chalk.dim(value));
+}
+
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+/**
+ * A lightweight terminal spinner for long-running steps (e.g. web search,
+ * model calls). No external dependency. Renders in place on a TTY; on a
+ * non-TTY (CI, piped logs) it degrades to a single start line + final line so
+ * output stays clean. Always call .succeed()/.fail()/.stop() to finish.
+ */
+export function spinner(text: string) {
+  const isTTY = Boolean(process.stdout.isTTY);
+  let frame = 0;
+  let current = text;
+  let timer: ReturnType<typeof setInterval> | null = null;
+
+  const render = () => {
+    if (!isTTY) return;
+    const f = chalk.cyan(SPINNER_FRAMES[frame = (frame + 1) % SPINNER_FRAMES.length]);
+    process.stdout.write(`\r  ${f} ${chalk.dim(current)}\x1b[K`);
+  };
+
+  const clearLine = () => {
+    if (isTTY) process.stdout.write('\r\x1b[K');
+  };
+
+  const finish = (symbol: string, msg: string) => {
+    if (timer) clearInterval(timer);
+    timer = null;
+    clearLine();
+    console.log(`  ${symbol} ${msg}`);
+  };
+
+  if (isTTY) {
+    render();
+    timer = setInterval(render, 80);
+  } else {
+    console.log(chalk.gray('  ⋯ ') + chalk.dim(text));
+  }
+
+  return {
+    update(next: string) {
+      current = next;
+      if (!isTTY) console.log(chalk.gray('  ⋯ ') + chalk.dim(next));
+    },
+    succeed(msg: string = current) {
+      finish(chalk.green('✓'), msg);
+    },
+    fail(msg: string = current) {
+      finish(chalk.red('✗'), chalk.red(msg));
+    },
+    stop() {
+      if (timer) clearInterval(timer);
+      timer = null;
+      clearLine();
+    },
+  };
+}
+
+export type Spinner = ReturnType<typeof spinner>;
+
 export function isDebug(): boolean {
   return DEBUG;
 }

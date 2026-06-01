@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, type FormEvent } from 'react';
-import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown } from 'lucide-react';
+import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown, Code2 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { DEFAULT_MODEL, formatCost, type OpenAIModel } from '@/lib/models';
 import { MODES, type Mode, prettyAgentName } from '@/lib/modes';
@@ -14,6 +14,8 @@ import { InputRequestCard } from './components/InputRequestCard';
 import { DebugDrawer } from './components/DebugDrawer';
 import { ChatSidebar } from './components/ChatSidebar';
 import { BuildPlan } from './components/BuildPlan';
+import { CodePreview } from './components/CodePreview';
+import { extractCodeBlocks, type CodeBlock } from '@/lib/utils/extract-code';
 import { useConversations, type StoredMessage } from './hooks/useConversations';
 import type { AgentEvent } from '@/lib/agent-events';
 
@@ -57,6 +59,13 @@ export default function Home() {
   const [live, setLive] = useState<LiveRun>(emptyRun);
   const [liveRunId, setLiveRunId] = useState<string | null>(null);
   const [debugOpen, setDebugOpen] = useState(false);
+  // Code preview side pane: opened from an agent deliverable's "View code".
+  const [preview, setPreview] = useState<{ title: string; blocks: CodeBlock[] } | null>(null);
+
+  const openCodePreview = (title: string, source: string) => {
+    const blocks = extractCodeBlocks(source);
+    if (blocks.length > 0) setPreview({ title, blocks });
+  };
   const [now, setNow] = useState(Date.now());
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -494,6 +503,7 @@ export default function Home() {
                         ? [...messages.slice(0, i)].reverse().find((p) => p.role === 'user')?.content
                         : undefined
                     }
+                    onViewCode={openCodePreview}
                   />
                 ))}
                 {isLoading && (
@@ -538,6 +548,13 @@ export default function Home() {
         open={debugOpen}
         onClose={() => setDebugOpen(false)}
         events={live.events}
+      />
+
+      <CodePreview
+        open={preview !== null}
+        title={preview?.title}
+        blocks={preview?.blocks ?? []}
+        onClose={() => setPreview(null)}
       />
     </div>
   );
@@ -703,9 +720,11 @@ const REPORT_COLLAPSE_THRESHOLD = 1200;
 function MessageRow({
   message,
   prevUserMessage,
+  onViewCode,
 }: {
   message: ChatMessage;
   prevUserMessage?: string;
+  onViewCode?: (title: string, source: string) => void;
 }) {
   const isUser = message.role === 'user';
   // v2 assistant turns render as a BuildPlan board instead of a markdown bubble.
@@ -716,6 +735,8 @@ function MessageRow({
   // Long reports start collapsed; short ones and user messages always show full.
   const [expanded, setExpanded] = useState(false);
   const showCollapsed = isLongReport && !expanded;
+  // Offer a code preview when the (non-build-plan) report contains code/JSON.
+  const reportCode = !isUser && !isBuildPlan ? extractCodeBlocks(message.content) : [];
 
   return (
     <div
@@ -743,6 +764,7 @@ function MessageRow({
             goal={prevUserMessage}
             agents={message.meta!.perAgent!}
             totalDuration={message.meta!.totalDuration}
+            onViewCode={onViewCode}
           />
         ) : (
           <div
@@ -759,16 +781,28 @@ function MessageRow({
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white to-transparent" />
               )}
             </div>
-            {isLongReport && (
-              <button
-                type="button"
-                onClick={() => setExpanded((v) => !v)}
-                className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-stone-500 hover:text-stone-900"
-              >
-                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
-                {expanded ? 'Collapse report' : 'Show full report'}
-              </button>
-            )}
+            <div className="mt-2 flex items-center gap-3">
+              {isLongReport && (
+                <button
+                  type="button"
+                  onClick={() => setExpanded((v) => !v)}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-500 hover:text-stone-900"
+                >
+                  <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
+                  {expanded ? 'Collapse report' : 'Show full report'}
+                </button>
+              )}
+              {reportCode.length > 0 && onViewCode && (
+                <button
+                  type="button"
+                  onClick={() => onViewCode('Report code', message.content)}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-500 hover:text-stone-900"
+                >
+                  <Code2 className="h-3.5 w-3.5" />
+                  View code ({reportCode.length})
+                </button>
+              )}
+            </div>
           </div>
         )}
         {message.meta && <MetaBar meta={message.meta} />}

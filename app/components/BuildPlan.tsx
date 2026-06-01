@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, ChevronRight, Palette, Server, Layout, Boxes, Target } from 'lucide-react';
+import { Check, ChevronRight, Palette, Server, Layout, Boxes, Target, Code2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { prettyAgentName } from '@/lib/modes';
 import { MarkdownContent } from './MarkdownContent';
+import { extractCodeBlocks } from '@/lib/utils/extract-code';
 
 export interface BuildPlanAgent {
   agent: string;
@@ -19,6 +20,8 @@ interface BuildPlanProps {
   goal?: string;
   agents: BuildPlanAgent[];
   totalDuration?: number;
+  /** Open the code preview pane with the blocks extracted from `source`. */
+  onViewCode?: (title: string, source: string) => void;
 }
 
 // Per-agent visual identity for the v2 (choreographed) team.
@@ -42,7 +45,7 @@ function formatDuration(ms: number): string {
  * then one card per specialist (Design / Backend / Frontend) with its
  * deliverable collapsible underneath. Reads like a spec a team assembled.
  */
-export function BuildPlan({ goal, agents, totalDuration }: BuildPlanProps) {
+export function BuildPlan({ goal, agents, totalDuration, onViewCode }: BuildPlanProps) {
   const completed = agents.filter((a) => a.completed).length;
 
   return (
@@ -66,17 +69,26 @@ export function BuildPlan({ goal, agents, totalDuration }: BuildPlanProps) {
 
       <div className="divide-y divide-stone-100">
         {agents.map((a, i) => (
-          <AgentCard key={`${a.agent}-${i}`} agent={a} defaultOpen={i === 0} />
+          <AgentCard key={`${a.agent}-${i}`} agent={a} defaultOpen={i === 0} onViewCode={onViewCode} />
         ))}
       </div>
     </div>
   );
 }
 
-function AgentCard({ agent, defaultOpen }: { agent: BuildPlanAgent; defaultOpen: boolean }) {
+function AgentCard({
+  agent,
+  defaultOpen,
+  onViewCode,
+}: {
+  agent: BuildPlanAgent;
+  defaultOpen: boolean;
+  onViewCode?: (title: string, source: string) => void;
+}) {
   const [open, setOpen] = useState(defaultOpen);
   const { icon: Icon, tint, ring } = metaFor(agent.agent);
   const hasOutput = Boolean(agent.output?.trim());
+  const codeCount = agent.output ? extractCodeBlocks(agent.output).length : 0;
 
   return (
     <div className="px-3 py-2.5">
@@ -115,6 +127,16 @@ function AgentCard({ agent, defaultOpen }: { agent: BuildPlanAgent; defaultOpen:
       {open && hasOutput && (
         <div className="mt-2 ml-[2.6rem] rounded-xl border border-stone-100 bg-stone-50/50 px-3 py-2 text-sm">
           <MarkdownContent content={agent.output!} />
+          {codeCount > 0 && onViewCode && (
+            <button
+              type="button"
+              onClick={() => onViewCode(`${prettyAgentName(agent.agent)} code`, agent.output!)}
+              className="mt-2 inline-flex items-center gap-1 rounded-md border border-stone-200 bg-white px-2 py-1 text-[11px] font-medium text-stone-600 hover:border-stone-300 hover:text-stone-900"
+            >
+              <Code2 className="h-3.5 w-3.5" />
+              View code ({codeCount})
+            </button>
+          )}
         </div>
       )}
     </div>

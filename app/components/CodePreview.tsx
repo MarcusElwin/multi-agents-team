@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, Copy, Check, Code2 } from 'lucide-react';
+import { X, Copy, Check, Code2, Eye } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
-import type { CodeBlock } from '@/lib/utils/extract-code';
+import { buildPreviewDoc, type CodeBlock } from '@/lib/utils/extract-code';
 
 interface CodePreviewProps {
   open: boolean;
@@ -20,10 +20,18 @@ interface CodePreviewProps {
 export function CodePreview({ open, title, blocks, onClose }: CodePreviewProps) {
   const [active, setActive] = useState(0);
   const [copied, setCopied] = useState(false);
+  // 'code' shows the source; 'preview' renders it live (only when renderable).
+  const [view, setView] = useState<'code' | 'preview'>('code');
 
   useEffect(() => {
     if (open) setActive(0);
   }, [open, blocks]);
+
+  // When switching to a block that can render, default to its preview; the
+  // user can flip back to code. Non-renderable blocks force code view.
+  useEffect(() => {
+    setView(blocks[active]?.previewKind ? 'preview' : 'code');
+  }, [active, blocks]);
 
   useEffect(() => {
     if (!open) return;
@@ -69,14 +77,40 @@ export function CodePreview({ open, title, blocks, onClose }: CodePreviewProps) 
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-stone-500 hover:bg-stone-100 hover:text-stone-900"
-            aria-label="Close code preview"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {block?.previewKind && (
+              <div className="flex items-center rounded-lg border border-stone-200 p-0.5 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setView('preview')}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium transition-colors',
+                    view === 'preview' ? 'bg-stone-900 text-white' : 'text-stone-600 hover:text-stone-900',
+                  )}
+                >
+                  <Eye className="h-3 w-3" /> Preview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView('code')}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium transition-colors',
+                    view === 'code' ? 'bg-stone-900 text-white' : 'text-stone-600 hover:text-stone-900',
+                  )}
+                >
+                  <Code2 className="h-3 w-3" /> Code
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+              aria-label="Close code preview"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {blocks.length > 1 && (
@@ -87,19 +121,33 @@ export function CodePreview({ open, title, blocks, onClose }: CodePreviewProps) 
                 type="button"
                 onClick={() => setActive(i)}
                 className={cn(
-                  'shrink-0 rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors',
+                  'inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors',
                   i === active
                     ? 'border-stone-900 bg-stone-900 text-white'
                     : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300',
                 )}
               >
+                {b.previewKind && <Eye className="h-2.5 w-2.5" />}
                 {b.label}
               </button>
             ))}
           </div>
         )}
 
-        {block && (
+        {block && view === 'preview' && block.previewKind && (
+          // Sandboxed: allow-scripts so React/Babel can run, but no
+          // allow-same-origin, so the rendered code can't reach our origin,
+          // cookies, or storage.
+          <iframe
+            key={`${active}-${block.code.length}`}
+            title="Live preview"
+            sandbox="allow-scripts"
+            srcDoc={buildPreviewDoc(block)}
+            className="flex-1 border-0 bg-white"
+          />
+        )}
+
+        {block && view === 'code' && (
           <div className="relative flex-1 overflow-auto bg-stone-950 [scrollbar-width:thin]">
             <button
               type="button"

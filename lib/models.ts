@@ -31,3 +31,35 @@ export function resolveModel(input?: string): OpenAIModel {
   if (input && VALID.has(input)) return input as OpenAIModel;
   return DEFAULT_MODEL;
 }
+
+/**
+ * Indicative USD pricing per 1M tokens (input / output). Estimates for the
+ * cost readout in the UI — not billing-accurate. Update as pricing changes.
+ */
+export const MODEL_PRICING: Record<OpenAIModel, { input: number; output: number }> = {
+  'gpt-5.5': { input: 1.75, output: 14 },
+  'gpt-5.4': { input: 1.25, output: 10 },
+  'gpt-5.4-mini': { input: 0.25, output: 2 },
+  'gpt-5.4-nano': { input: 0.05, output: 0.4 },
+  'gpt-4.1': { input: 2, output: 8 },
+  'o4-mini': { input: 1.1, output: 4.4 },
+};
+
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/** Estimate USD cost for a token usage on a given model. */
+export function estimateCost(model: OpenAIModel, usage: TokenUsage): number {
+  const p = MODEL_PRICING[model] ?? MODEL_PRICING[DEFAULT_MODEL];
+  return (usage.inputTokens * p.input + usage.outputTokens * p.output) / 1_000_000;
+}
+
+/** Format a USD cost compactly: <$0.01 shows more precision. */
+export function formatCost(usd: number): string {
+  if (usd <= 0) return '$0.00';
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}

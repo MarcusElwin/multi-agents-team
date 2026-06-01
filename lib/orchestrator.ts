@@ -4,7 +4,7 @@ import {
 import { MessageBus, type Message } from './message-bus';
 import { Conversation } from './conversation';
 import { waitForInput } from './input-registry';
-import { DEFAULT_MODEL, type OpenAIModel } from './models';
+import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel } from './models';
 import type { AgentHooks, EventSink } from './agent-events';
 import * as log from './logger';
 
@@ -28,6 +28,22 @@ interface AgentResult {
     text: string;
     steps: AgentStep[];
     response?: { messages?: ResponseMessage[] };
+    // AI SDK usage; field names vary across versions, so read defensively.
+    usage?: {
+        inputTokens?: number;
+        outputTokens?: number;
+        promptTokens?: number;
+        completionTokens?: number;
+    };
+}
+
+/** Normalize the AI SDK's usage shape (varies by version) to in/out tokens. */
+function readUsage(result: { usage?: AgentResult['usage'] }): { inputTokens: number; outputTokens: number } {
+    const u = result.usage ?? {};
+    return {
+        inputTokens: u.inputTokens ?? u.promptTokens ?? 0,
+        outputTokens: u.outputTokens ?? u.completionTokens ?? 0,
+    };
 }
 
 // Shape of the tool-result `output.value` payloads we read from agent results.
@@ -192,6 +208,10 @@ export class AgentOrchestrator {
         this.currentAgent = 'coordinator';
         let iterations = 0;
         const maxIterations = 15;
+        // Accumulate token usage + cost across the whole run.
+        let totalIn = 0;
+        let totalOut = 0;
+        let totalCost = 0;
 
         try {
         while (iterations < maxIterations) {
@@ -230,6 +250,13 @@ export class AgentOrchestrator {
                 log.step(`steps: ${result.steps.length} · response: ${result.text.length} chars`);
                 log.debug('response preview', result.text.slice(0, 200));
 
+                // Token usage + cost for this iteration.
+                const usage = readUsage(result);
+                const costUsd = estimateCost(this.model, usage);
+                totalIn += usage.inputTokens;
+                totalOut += usage.outputTokens;
+                totalCost += costUsd;
+
                 // Log tool calls
                 const toolCalls = result.steps
                     .flatMap(step => step.toolCalls ?? []);
@@ -246,6 +273,9 @@ export class AgentOrchestrator {
                     durationMs: Date.now() - iterationStart,
                     stepCount: result.steps.length,
                     outputPreview: result.text.slice(0, 240),
+                    inputTokens: usage.inputTokens,
+                    outputTokens: usage.outputTokens,
+                    costUsd,
                 });
 
                 // Publish agent response to bus WITH structured metadata
@@ -316,6 +346,7 @@ export class AgentOrchestrator {
                         Iterations: iterations,
                         'Final output': `${completion.finalOutput.length} chars`,
                         'Bus messages': this.bus.getMessageHistory().length,
+                        'Est. cost': `${formatCost(totalCost)} (${(totalIn + totalOut).toLocaleString()} tokens)`,
                     });
                     emit({
                         type: 'workflow_complete',
@@ -329,6 +360,9 @@ export class AgentOrchestrator {
                                     .map(m => m.from)
                             )
                         ),
+                        totalInputTokens: totalIn,
+                        totalOutputTokens: totalOut,
+                        totalCostUsd: totalCost,
                     });
                     return completion.finalOutput;
                 }

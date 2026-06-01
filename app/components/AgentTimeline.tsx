@@ -39,6 +39,8 @@ export interface LiveAgent {
   // Live reasoning + search activity, surfaced in expandable rows.
   steps: AgentReasoningStep[];
   searches: AgentSearch[];
+  /** Estimated USD cost accumulated for this agent. */
+  costUsd?: number;
 }
 
 interface AgentTimelineProps {
@@ -48,6 +50,8 @@ interface AgentTimelineProps {
   iteration?: number;
   now: number;
   plan?: { intent: string; steps: PlanStep[] };
+  /** Running estimated USD cost for the whole run so far. */
+  costUsd?: number;
 }
 
 function formatDuration(ms: number): string {
@@ -55,7 +59,14 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function AgentTimeline({ agents, mode, currentAgent, iteration, now, plan }: AgentTimelineProps) {
+function formatCost(usd: number): string {
+  if (usd <= 0) return '$0.00';
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+export function AgentTimeline({ agents, mode, currentAgent, iteration, now, plan, costUsd }: AgentTimelineProps) {
   if (agents.length === 0 && !plan) {
     return (
       <div className="flex gap-3 py-4">
@@ -95,6 +106,11 @@ export function AgentTimeline({ agents, mode, currentAgent, iteration, now, plan
               'Agents working…'
             )}
           </span>
+          {costUsd !== undefined && costUsd > 0 && (
+            <span className="ml-auto rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 tabular-nums">
+              ~{formatCost(costUsd)}
+            </span>
+          )}
         </div>
 
         {plan && <PlanBlock plan={plan} currentAgent={currentAgent} />}
@@ -218,6 +234,9 @@ function AgentRow({ agent, now }: { agent: LiveAgent; now: number }) {
               <MessageSquare className="h-3 w-3" />
               {agent.outbound}
             </span>
+          )}
+          {agent.costUsd !== undefined && agent.costUsd > 0 && (
+            <span className="tabular-nums text-emerald-600">~{formatCost(agent.costUsd)}</span>
           )}
           {elapsed > 0 && <span className="tabular-nums">{formatDuration(elapsed)}</span>}
         </div>

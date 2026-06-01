@@ -18,6 +18,8 @@ export interface StoredMessage {
     agentsUsed?: string[];
     iterations?: number;
     totalDuration?: number;
+    totalCostUsd?: number;
+    totalTokens?: number;
     // For v2: each agent's deliverable, rendered as a build-plan card. `output`
     // is the full text so the card can show a collapsible deliverable.
     perAgent?: Array<{ agent: string; duration: number; completed: boolean; output?: string }>;

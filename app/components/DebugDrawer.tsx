@@ -158,9 +158,33 @@ function FilterChip({
   );
 }
 
+/**
+ * The main free-text payload of an event, if any — bus/agent content, step
+ * reasoning, a search query. Rendered as readable prose; the raw JSON stays
+ * available separately. Returns null for purely structural events.
+ */
+function primaryText(event: AgentEvent): string | null {
+  switch (event.type) {
+    case 'bus_message':
+      return event.content || null;
+    case 'agent_step':
+      return event.text || null;
+    case 'workflow_complete':
+      return event.mode === 'v1' ? event.result ?? null : null;
+    case 'workflow_error':
+      return event.error || null;
+    case 'agent_plan':
+      return event.steps.map((s, i) => `${i + 1}. ${s.agent} — ${s.task}`).join('\n');
+    default:
+      return null;
+  }
+}
+
 function EventCell({ event, index }: { event: AgentEvent; index: number }) {
   const [expanded, setExpanded] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
   const meta = eventMeta(event);
+  const text = primaryText(event);
 
   return (
     <li className="px-3 py-2">
@@ -197,9 +221,28 @@ function EventCell({ event, index }: { event: AgentEvent; index: number }) {
         </span>
       </button>
       {expanded && (
-        <pre className="mt-2 ml-7 overflow-x-auto rounded-md bg-stone-950 px-3 py-2 text-[11px] leading-relaxed text-stone-100 [scrollbar-width:thin]">
-          {JSON.stringify(event, null, 2)}
-        </pre>
+        <div className="mt-2 ml-7 space-y-2">
+          {text && (
+            // Readable, wrapped, scrollable text block — long bus payloads no
+            // longer become an unbroken wall. whitespace-pre-wrap keeps any
+            // line structure the agent emitted.
+            <div className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-stone-200 bg-stone-50 px-3 py-2 text-[11px] leading-relaxed text-stone-700 [scrollbar-width:thin]">
+              {text}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowRaw((v) => !v)}
+            className="text-[10px] font-medium text-stone-400 hover:text-stone-700"
+          >
+            {showRaw ? 'Hide raw event' : 'Show raw event'}
+          </button>
+          {showRaw && (
+            <pre className="max-h-72 overflow-auto rounded-md bg-stone-950 px-3 py-2 text-[11px] leading-relaxed text-stone-100 [scrollbar-width:thin]">
+              {JSON.stringify(event, null, 2)}
+            </pre>
+          )}
+        </div>
       )}
     </li>
   );

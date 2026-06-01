@@ -15,6 +15,10 @@ export type AgentEvent =
       stepCount: number;
       outputPreview: string;
       completed?: boolean;
+      // Token usage + estimated USD cost for this iteration, when available.
+      inputTokens?: number;
+      outputTokens?: number;
+      costUsd?: number;
     }
   | { type: 'tool_call'; agent: string; toolName: string; preview?: string }
   | {
@@ -74,6 +78,10 @@ export type AgentEvent =
       totalDuration?: number;
       agentsUsed?: string[];
       messageBusStats?: unknown;
+      // Aggregate token usage + estimated USD cost across the whole run.
+      totalInputTokens?: number;
+      totalOutputTokens?: number;
+      totalCostUsd?: number;
     }
   | { type: 'workflow_error'; error: string };
 

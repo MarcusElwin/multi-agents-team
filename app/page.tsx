@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
-import { DEFAULT_MODEL, type OpenAIModel } from '@/lib/models';
+import { DEFAULT_MODEL, formatCost, type OpenAIModel } from '@/lib/models';
 import { MODES, type Mode, prettyAgentName } from '@/lib/modes';
 import { MarkdownContent } from './components/MarkdownContent';
 import { ModelSelector } from './components/ModelSelector';
@@ -39,10 +39,12 @@ interface LiveRun {
   events: AgentEvent[];
   plan?: { intent: string; steps: PlanStep[] };
   pendingInput?: PendingInput;
+  // Running totals accumulated from iteration_end events.
+  costUsd: number;
 }
 
 function emptyRun(): LiveRun {
-  return { agents: new Map(), events: [] };
+  return { agents: new Map(), events: [], costUsd: 0 };
 }
 
 export default function Home() {
@@ -143,9 +145,8 @@ export default function Home() {
 
   function applyEvent(prev: LiveRun, event: AgentEvent): LiveRun {
     const next: LiveRun = {
+      ...prev,
       agents: new Map(prev.agents),
-      currentAgent: prev.currentAgent,
-      iteration: prev.iteration,
       events: [...prev.events, event],
     };
 
@@ -178,7 +179,9 @@ export default function Home() {
           completed: event.completed ?? existing?.completed,
           outputPreview: event.outputPreview || existing?.outputPreview,
           startedAt: undefined,
+          costUsd: (existing?.costUsd ?? 0) + (event.costUsd ?? 0),
         });
+        next.costUsd += event.costUsd ?? 0;
         break;
       }
       case 'tool_call': {
@@ -501,6 +504,7 @@ export default function Home() {
                     iteration={live.iteration}
                     now={now}
                     plan={live.plan}
+                    costUsd={live.costUsd}
                   />
                 )}
                 {live.pendingInput && (
@@ -561,6 +565,8 @@ function buildAssistantMessage(
         model,
         agentsUsed: finalEvent.agentsUsed,
         iterations: finalEvent.iterations,
+        totalCostUsd: finalEvent.totalCostUsd,
+        totalTokens: (finalEvent.totalInputTokens ?? 0) + (finalEvent.totalOutputTokens ?? 0),
       },
     };
   }
@@ -577,6 +583,8 @@ function buildAssistantMessage(
       model,
       iterations: finalEvent.iterations,
       totalDuration: finalEvent.totalDuration,
+      totalCostUsd: finalEvent.totalCostUsd,
+      totalTokens: (finalEvent.totalInputTokens ?? 0) + (finalEvent.totalOutputTokens ?? 0),
       perAgent: results.map((r) => ({
         agent: r.agent,
         duration: r.duration,
@@ -795,6 +803,14 @@ function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
       {meta.totalDuration !== undefined && (
         <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-600">
           {(meta.totalDuration / 1000).toFixed(1)}s
+        </span>
+      )}
+      {meta.totalCostUsd !== undefined && meta.totalCostUsd > 0 && (
+        <span
+          className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700"
+          title={meta.totalTokens ? `${meta.totalTokens.toLocaleString()} tokens` : undefined}
+        >
+          ~{formatCost(meta.totalCostUsd)}
         </span>
       )}
       {meta.agentsUsed?.map((a, i) => (

@@ -96,10 +96,11 @@ export function createNodeAgent(opts: {
         `information rather than guessing. Cite what you find.\n\n`
       : ``) +
     (canReport
-      ? `You may produce a rich visual report instead of plain prose: call generateReport ` +
-        `with KPIs, charts (with real numbers from the sub-agents' work), tables, and ` +
-        `sections. Prefer generateReport when the content has data worth visualizing; ` +
-        `otherwise call finalize with markdown.\n\n`
+      ? `Prefer generateReport over finalize when the content has data worth visualizing. ` +
+        `Put comparison/tabular data in the report's \`tables\` field (columns + rows) — ` +
+        `NOT as markdown pipe tables in prose — and numeric series in \`charts\`. Use ` +
+        `\`kpis\` for headline metrics and \`sections\` only for narrative. Use real ` +
+        `numbers from the sub-agents' work.\n\n`
       : ``) +
     `RULES:\n` +
     `- Be concrete and useful. Produce real content (specs, code, analysis), not meta-talk.\n` +

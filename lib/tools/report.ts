@@ -60,8 +60,11 @@ export function makeReportTool() {
     description:
       "Produce a structured, visual report (KPIs, charts, tables, narrative sections) " +
       "instead of plain prose. Use this for your FINAL deliverable when the content " +
-      "benefits from data viz — comparisons, trends, metrics, breakdowns. Provide real " +
-      "numbers in chart/table data; do not invent precise figures you don't have.",
+      "benefits from data viz — comparisons, trends, metrics, breakdowns.\n" +
+      "CRITICAL: put tabular/comparison data in the `tables` field (columns + rows), " +
+      "NOT as markdown pipe tables inside `sections`. Put numeric series in `charts`. " +
+      "Use `sections` only for narrative prose. Provide real numbers; do not invent " +
+      "precise figures you don't have.",
     inputSchema: z.object({ report: reportSchema }),
     execute: async ({ report }) => ({ report }),
   });

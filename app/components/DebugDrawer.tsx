@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronRight, X, Bug, Activity, MessageSquare, Wrench, ArrowRight } from 'lucide-react';
 import type { AgentEvent } from '@/lib/agent-events';
 import { cn } from '@/lib/utils/cn';
+import { tryPrettyJson } from '@/lib/utils/extract-code';
 
 interface DebugDrawerProps {
   open: boolean;
@@ -159,14 +160,28 @@ function FilterChip({
 }
 
 /**
+ * Make a payload readable: pretty-print it if it's JSON, otherwise unescape the
+ * common literal "\n"/"\t" sequences agents emit inside strings so multi-line
+ * content actually wraps onto lines instead of showing as `\n`.
+ */
+function readable(text: string): string {
+  const pretty = tryPrettyJson(text);
+  if (pretty !== text) return pretty; // it was JSON
+  return text.replace(/\\n/g, '\n').replace(/\\t/g, '  ');
+}
+
+/**
  * The main free-text payload of an event, if any — bus/agent content, step
- * reasoning, a search query. Rendered as readable prose; the raw JSON stays
- * available separately. Returns null for purely structural events.
+ * reasoning, a tool call's args, a search query. Rendered as readable prose or
+ * pretty JSON; the raw event stays available separately. Null for purely
+ * structural events.
  */
 function primaryText(event: AgentEvent): string | null {
   switch (event.type) {
     case 'bus_message':
-      return event.content || null;
+      return event.content ? readable(event.content) : null;
+    case 'tool_call':
+      return event.preview ? readable(event.preview) : null;
     case 'agent_step':
       return event.text || null;
     case 'workflow_complete':
@@ -178,6 +193,12 @@ function primaryText(event: AgentEvent): string | null {
     default:
       return null;
   }
+}
+
+/** True when the readable text looks like JSON/code → render in a mono block. */
+function looksLikeCode(text: string): boolean {
+  const t = text.trimStart();
+  return t.startsWith('{') || t.startsWith('[');
 }
 
 function EventCell({ event, index }: { event: AgentEvent; index: number }) {
@@ -223,12 +244,19 @@ function EventCell({ event, index }: { event: AgentEvent; index: number }) {
       {expanded && (
         <div className="mt-2 ml-7 space-y-2">
           {text && (
-            // Readable, wrapped, scrollable text block — long bus payloads no
-            // longer become an unbroken wall. whitespace-pre-wrap keeps any
-            // line structure the agent emitted.
-            <div className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-stone-200 bg-stone-50 px-3 py-2 text-[11px] leading-relaxed text-stone-700 [scrollbar-width:thin]">
-              {text}
-            </div>
+            // Readable, wrapped, scrollable block — long payloads no longer
+            // become an unbroken wall. Code/JSON gets a dark mono treatment;
+            // prose gets a light wrapped block. whitespace-pre-wrap keeps any
+            // line structure (and the JSON pretty-printing) intact.
+            looksLikeCode(text) ? (
+              <pre className="max-h-80 overflow-auto rounded-md bg-stone-950 px-3 py-2 font-mono text-[11px] leading-relaxed text-emerald-200 [scrollbar-width:thin]">
+                {text}
+              </pre>
+            ) : (
+              <div className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-stone-200 bg-stone-50 px-3 py-2 text-[11px] leading-relaxed text-stone-700 [scrollbar-width:thin]">
+                {text}
+              </div>
+            )
           )}
           <button
             type="button"

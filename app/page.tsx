@@ -13,6 +13,7 @@ import { ArchitecturePanel } from './components/ArchitecturePanel';
 import { InputRequestCard } from './components/InputRequestCard';
 import { DebugDrawer } from './components/DebugDrawer';
 import { ChatSidebar } from './components/ChatSidebar';
+import { BuildPlan } from './components/BuildPlan';
 import { useConversations, type StoredMessage } from './hooks/useConversations';
 import type { AgentEvent } from '@/lib/agent-events';
 
@@ -481,8 +482,16 @@ export default function Home() {
               className="flex-1 overflow-y-auto [scrollbar-width:thin]"
             >
               <div className="mx-auto max-w-3xl px-4 py-6">
-                {messages.map((m) => (
-                  <MessageRow key={m.id} message={m} />
+                {messages.map((m, i) => (
+                  <MessageRow
+                    key={m.id}
+                    message={m}
+                    prevUserMessage={
+                      m.role === 'assistant'
+                        ? [...messages.slice(0, i)].reverse().find((p) => p.role === 'user')?.content
+                        : undefined
+                    }
+                  />
                 ))}
                 {isLoading && (
                   <AgentTimeline
@@ -557,20 +566,12 @@ function buildAssistantMessage(
   }
 
   const results = finalEvent.agentResults ?? [];
-  const content =
-    results.length === 0
-      ? '_(no agent output)_'
-      : results
-          .map(
-            (r) =>
-              `## ${prettyAgentName(r.agent)}${r.completed ? '' : ' (in progress)'}\n\n${r.output}`,
-          )
-          .join('\n\n---\n\n');
-
+  // v2 renders as a BuildPlan board from meta.perAgent, so content stays empty
+  // (a markdown fallback is kept for the rare no-output case).
   return {
     id: crypto.randomUUID(),
     role: 'assistant',
-    content,
+    content: results.length === 0 ? '_(no agent output)_' : '',
     meta: {
       mode: 'v2',
       model,
@@ -580,6 +581,7 @@ function buildAssistantMessage(
         agent: r.agent,
         duration: r.duration,
         completed: r.completed,
+        output: r.output,
       })),
     },
   };
@@ -690,9 +692,19 @@ function InputArea({
 // report" toggle, so a multi-section answer doesn't bury the conversation.
 const REPORT_COLLAPSE_THRESHOLD = 1200;
 
-function MessageRow({ message }: { message: ChatMessage }) {
+function MessageRow({
+  message,
+  prevUserMessage,
+}: {
+  message: ChatMessage;
+  prevUserMessage?: string;
+}) {
   const isUser = message.role === 'user';
-  const isLongReport = !isUser && message.content.length > REPORT_COLLAPSE_THRESHOLD;
+  // v2 assistant turns render as a BuildPlan board instead of a markdown bubble.
+  const isBuildPlan =
+    !isUser && message.meta?.mode === 'v2' && (message.meta.perAgent?.length ?? 0) > 0;
+  const isLongReport =
+    !isUser && !isBuildPlan && message.content.length > REPORT_COLLAPSE_THRESHOLD;
   // Long reports start collapsed; short ones and user messages always show full.
   const [expanded, setExpanded] = useState(false);
   const showCollapsed = isLongReport && !expanded;
@@ -714,35 +726,43 @@ function MessageRow({ message }: { message: ChatMessage }) {
       </div>
       <div
         className={cn(
-          'max-w-[85%] space-y-2',
+          isBuildPlan ? 'min-w-0 flex-1 space-y-2' : 'max-w-[85%] space-y-2',
           isUser && 'flex flex-col items-end'
         )}
       >
-        <div
-          className={cn(
-            'rounded-2xl px-4 py-2.5',
-            isUser
-              ? 'bg-stone-900 text-white'
-              : 'bg-white border border-stone-200 text-stone-900'
-          )}
-        >
-          <div className={cn('relative', showCollapsed && 'max-h-72 overflow-hidden')}>
-            <MarkdownContent content={message.content} />
-            {showCollapsed && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white to-transparent" />
+        {isBuildPlan ? (
+          <BuildPlan
+            goal={prevUserMessage}
+            agents={message.meta!.perAgent!}
+            totalDuration={message.meta!.totalDuration}
+          />
+        ) : (
+          <div
+            className={cn(
+              'rounded-2xl px-4 py-2.5',
+              isUser
+                ? 'bg-stone-900 text-white'
+                : 'bg-white border border-stone-200 text-stone-900'
+            )}
+          >
+            <div className={cn('relative', showCollapsed && 'max-h-72 overflow-hidden')}>
+              <MarkdownContent content={message.content} />
+              {showCollapsed && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white to-transparent" />
+              )}
+            </div>
+            {isLongReport && (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-stone-500 hover:text-stone-900"
+              >
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
+                {expanded ? 'Collapse report' : 'Show full report'}
+              </button>
             )}
           </div>
-          {isLongReport && (
-            <button
-              type="button"
-              onClick={() => setExpanded((v) => !v)}
-              className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-stone-500 hover:text-stone-900"
-            >
-              <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
-              {expanded ? 'Collapse report' : 'Show full report'}
-            </button>
-          )}
-        </div>
+        )}
         {message.meta && <MetaBar meta={message.meta} />}
       </div>
     </div>
@@ -782,20 +802,23 @@ function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
           {prettyAgentName(a)}
         </span>
       ))}
-      {meta.perAgent?.map((a, i) => (
-        <span
-          key={`${a.agent}-${i}`}
-          className={cn(
-            'flex items-center gap-1 rounded-full border px-2 py-0.5',
-            a.completed
-              ? 'border-green-200 bg-green-50 text-green-700'
-              : 'border-yellow-200 bg-yellow-50 text-yellow-700'
-          )}
-        >
-          {a.completed && <Check className="h-3 w-3" />}
-          {prettyAgentName(a.agent)} · {(a.duration / 1000).toFixed(1)}s
-        </span>
-      ))}
+      {/* v2 per-agent details live in the BuildPlan board above; show the
+          chips here only for non-build-plan messages. */}
+      {meta.mode !== 'v2' &&
+        meta.perAgent?.map((a, i) => (
+          <span
+            key={`${a.agent}-${i}`}
+            className={cn(
+              'flex items-center gap-1 rounded-full border px-2 py-0.5',
+              a.completed
+                ? 'border-green-200 bg-green-50 text-green-700'
+                : 'border-yellow-200 bg-yellow-50 text-yellow-700'
+            )}
+          >
+            {a.completed && <Check className="h-3 w-3" />}
+            {prettyAgentName(a.agent)} · {(a.duration / 1000).toFixed(1)}s
+          </span>
+        ))}
     </div>
   );
 }

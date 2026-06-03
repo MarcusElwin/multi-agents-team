@@ -1,7 +1,7 @@
 export type AgentEvent =
   | {
       type: 'workflow_start';
-      mode: 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7';
+      mode: 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v8' | 'v9';
       model: string;
       query: string;
       startingAgent?: string;
@@ -102,6 +102,20 @@ export type AgentEvent =
       agent: string;
     }
   | {
+      // v8 self-consistency: one parallel sample completed (with the judge's
+      // later score, when chosen). status 'done' on completion.
+      type: 'sample';
+      index: number;
+      preview: string;
+    }
+  | {
+      // v9 swarm: an agent left a contribution (trace) on the shared scratchpad.
+      type: 'trace';
+      round: number;
+      agent: string;
+      preview: string;
+    }
+  | {
       type: 'bus_message';
       from: string;
       to: string;
@@ -111,7 +125,7 @@ export type AgentEvent =
   | { type: 'handoff'; from: string; to: string }
   | {
       type: 'workflow_complete';
-      mode: 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7';
+      mode: 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v8' | 'v9';
       result?: string;
       agentResults?: Array<{
         agent: string;
@@ -155,6 +169,17 @@ export type RunSummary =
       tasks: Array<{ taskId: string; title: string }>;
       bids: Array<{ taskId: string; agent: string; fit: number; estCostUsd: number }>;
       awards: Array<{ taskId: string; agent: string; output?: string }>;
+    }
+  | {
+      kind: 'self-consistency';
+      samples: Array<{ index: number; text: string; chosen: boolean }>;
+      method: 'select' | 'merge';
+      rationale: string;
+    }
+  | {
+      kind: 'swarm';
+      rounds: number;
+      traces: Array<{ round: number; agent: string; text: string }>;
     };
 
 export type EventSink = (event: AgentEvent) => void;

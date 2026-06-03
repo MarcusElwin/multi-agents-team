@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowRight, ArrowLeftRight, ChevronDown, X } from 'lucide-react';
+import { ArrowRight, ArrowLeftRight, ChevronDown, X, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { MODES, type Mode } from '@/lib/modes';
 
@@ -164,6 +164,31 @@ export function ArchitecturePanel({
               </div>
             ))}
           </div>
+
+          {spec.note && (
+            <div className="mt-4 rounded-lg border border-stone-200 bg-stone-50/60 p-3">
+              <SectionLabel>Note</SectionLabel>
+              <p className="mt-1 text-[11px] leading-relaxed text-stone-600">{spec.note}</p>
+            </div>
+          )}
+
+          {spec.references && spec.references.length > 0 && (
+            <div className="mt-4 space-y-1.5 border-t border-stone-100 pt-4">
+              <SectionLabel>References</SectionLabel>
+              {spec.references.map((r) => (
+                <a
+                  key={r.url}
+                  href={r.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-start gap-1.5 text-[11px] leading-snug text-stone-500 hover:text-stone-900"
+                >
+                  <ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
+                  {r.label}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

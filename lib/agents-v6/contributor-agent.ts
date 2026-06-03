@@ -1,5 +1,5 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { provider } from "../provider";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 import { type AgentHooks } from "../agent-events";
@@ -62,7 +62,7 @@ export function createContributorAgent(
     `write or finalize the "solution" section with the complete answer.`;
 
   return new Agent({
-    model: openai(model),
+    model: provider()(model),
     system,
     tools: { writeSection },
     stopWhen: stepCountIs(3),

@@ -1,5 +1,5 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { provider } from "../provider";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 import { type AgentHooks } from "../agent-events";
@@ -8,7 +8,7 @@ import * as log from "../logger";
 
 export function createWriterAgent(model: OpenAIModel = DEFAULT_MODEL, hooks: AgentHooks = {}) {
     return new Agent({
-    model: openai(model),
+    model: provider()(model),
     system: `You are the Writer Agent - an expert in creating engaging, well-structured content.
 
 Your responsibilities:

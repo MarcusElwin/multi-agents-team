@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
-import { Workflow, Network, GitBranch, RefreshCw, Scale, LayoutGrid, Gavel } from 'lucide-react';
+import { Workflow, Network, GitBranch, RefreshCw, Scale, LayoutGrid, Gavel, Copy, Boxes } from 'lucide-react';
 
-export type Mode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7';
+export type Mode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v8' | 'v9';
 
 export interface AgentSpec {
   /** Canonical agent id used on the bus / in events. */
@@ -37,6 +37,10 @@ export interface ModeSpec {
   whenToUse: string;
   /** The main trade-off / cost of this pattern. */
   tradeoff: string;
+  /** Further-reading links for this pattern (optional). */
+  references?: { label: string; url: string }[];
+  /** A short author's note / field observation (optional). */
+  note?: string;
 }
 
 export const MODES: Record<Mode, ModeSpec> = {
@@ -70,6 +74,11 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'Linear content pipelines where the steps and their order are clear up front.',
     tradeoff: 'A single coordinator is a bottleneck and a single point of failure; no parallelism.',
+    references: [
+      { label: 'Anthropic — Building effective agents (Orchestrator-workers)', url: 'https://www.anthropic.com/research/building-effective-agents' },
+      { label: 'OpenAI — A practical guide to building agents', url: 'https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf' },
+    ],
+    note: 'The workhorse pattern. A strong coordinator + cheap specialists is reliable and easy to debug — but the coordinator is a bottleneck, so keep its turns short and its delegation explicit.',
   },
   v2: {
     value: 'v2',
@@ -102,6 +111,11 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'Cross-functional design tasks where peers must negotiate a shared artifact.',
     tradeoff: 'Peer negotiation can loop or stall; harder to guarantee convergence than a coordinator.',
+    references: [
+      { label: 'Anthropic — Building effective agents', url: 'https://www.anthropic.com/research/building-effective-agents' },
+      { label: 'Microsoft AutoGen — multi-agent conversation', url: 'https://microsoft.github.io/autogen/' },
+    ],
+    note: 'Peers negotiating directly can produce richer cross-functional output, but convergence isn’t guaranteed — feed each agent its inbox and give clear "done" criteria or it loops.',
   },
   v3: {
     value: 'v3',
@@ -131,6 +145,11 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'Open-ended tasks that naturally break into nested, independent subtasks.',
     tradeoff: 'Emergent tree shape is less predictable; recursive spawning + synthesis costs more tokens.',
+    references: [
+      { label: 'Anthropic — Orchestrator-workers & subagents', url: 'https://www.anthropic.com/research/building-effective-agents' },
+      { label: 'Anthropic — How we built our multi-agent research system', url: 'https://www.anthropic.com/engineering/built-multi-agent-research-system' },
+    ],
+    note: 'Recursive decomposition shines on open-ended work, but the tree shape is emergent — cap depth/width and watch cost, since every parent adds a synthesis pass.',
   },
   v4: {
     value: 'v4',
@@ -160,6 +179,11 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'A single artifact you want iteratively improved to a quality bar — a draft, spec, or snippet.',
     tradeoff: 'Cost grows with each round; a never-satisfied critic can burn the full round budget.',
+    references: [
+      { label: 'Anthropic — Building effective agents (Evaluator-optimizer)', url: 'https://www.anthropic.com/research/building-effective-agents' },
+      { label: 'Reflexion: language agents with verbal reinforcement learning', url: 'https://arxiv.org/abs/2303.11366' },
+    ],
+    note: 'A demanding critic + a concrete rubric is the whole game. Vague rubrics give vague gains; specific, actionable issues drive real improvement round over round.',
   },
   v5: {
     value: 'v5',
@@ -190,6 +214,11 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'Decisions and trade-offs where the strongest case for each side should be heard first.',
     tradeoff: 'Adds rounds of argument before any answer; the verdict quality depends on the judge.',
+    references: [
+      { label: 'Improving factuality and reasoning via multiagent debate', url: 'https://arxiv.org/abs/2305.14325' },
+      { label: 'AI safety via debate', url: 'https://arxiv.org/abs/1805.00899' },
+    ],
+    note: 'Great for surfacing the strongest case on each side of a decision. The judge matters as much as the debaters — a weak judge just averages, a good one weighs.',
   },
   v6: {
     value: 'v6',
@@ -220,6 +249,11 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'Problems whose answer assembles from many partial contributions converging on a shared artifact.',
     tradeoff: 'Controller selection can loop; no direct peer messaging means coordination is slower.',
+    references: [
+      { label: 'Exploring LLM multi-agent systems based on blackboard architecture', url: 'https://arxiv.org/abs/2507.01701' },
+      { label: 'LLM-based multi-agent blackboard system', url: 'https://arxiv.org/abs/2510.01285' },
+    ],
+    note: 'Content-driven control (who acts next depends on the board state) is the differentiator. It’s powerful for shared-intelligence problems but slower than direct messaging.',
   },
   v7: {
     value: 'v7',
@@ -252,10 +286,84 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'Heterogeneous work where the best agent for each task is not obvious up front.',
     tradeoff: 'The bid round is extra LLM calls; only worth it for larger, varied agent pools.',
+    references: [
+      { label: 'The 5th orchestration pattern: market-based task allocation', url: 'https://dev.to/slythefox/the-5th-agent-orchestration-pattern-market-based-task-allocation-db0' },
+      { label: 'Consensus-Based Bundle Algorithm (CBBA)', url: 'https://acl.mit.edu/projects/consensus-based-bundle-algorithm' },
+    ],
+    note: 'Competitive bidding spreads work to the best-fit agent and makes cost visible, but the bid round is extra calls — it pays off mainly with larger, heterogeneous agent pools.',
+  },
+  v8: {
+    value: 'v8',
+    label: 'v8 self-consistency',
+    pattern: 'Self-Consistency',
+    icon: Copy,
+    tagline: 'sample in parallel, judge the best',
+    description:
+      'The same task is sampled several times independently and in parallel; a judge then either selects the strongest answer or merges the candidates into a consensus. Best for questions where a single attempt is unreliable but agreement across attempts signals a good answer.',
+    endpoint: '/api/agents-v8',
+    agents: [
+      { id: 'sampler', name: 'Sampler', role: 'Produces one independent attempt (×N in parallel)' },
+      { id: 'judge', name: 'Judge', role: 'Selects the best sample or merges a consensus' },
+    ],
+    suggestions: [
+      'What is the most defensible answer: is a hot dog a sandwich? Reason it out.',
+      'Estimate the number of piano tuners in Chicago, showing your reasoning',
+      'Propose the single best name for a CLI that runs multi-agent workflows',
+      'What’s the strongest one-paragraph case for using TypeScript over JavaScript?',
+    ],
+    durationHint: 'up to ~2 min',
+    howItWorks: [
+      'The task is sent to N sampler agents that run independently and in parallel.',
+      'Each produces its own complete answer, unaware of the others.',
+      'A judge reads all N candidates.',
+      'The judge selects the strongest, or merges complementary answers into one.',
+    ],
+    whenToUse: 'Questions where one attempt is noisy but agreement across attempts signals quality.',
+    tradeoff: 'N parallel samples cost N× the tokens of a single attempt for the sampling step.',
+    references: [
+      { label: 'Self-Consistency Improves Chain of Thought Reasoning', url: 'https://arxiv.org/abs/2203.11171' },
+      { label: 'Anthropic — Building effective agents (Parallelization)', url: 'https://www.anthropic.com/research/building-effective-agents' },
+    ],
+    note: 'Cheap reliability boost on reasoning-heavy questions: sample a few times, let a judge reconcile. The judge’s merge step is where a lot of the value is — it’s not just a vote.',
+  },
+  v9: {
+    value: 'v9',
+    label: 'v9 swarm',
+    pattern: 'Swarm',
+    icon: Boxes,
+    tagline: 'identical agents build on a shared scratchpad',
+    description:
+      'A swarm of identical, role-less agents works the same problem over several rounds. Each round, every agent reads the shared scratchpad of contributions so far and adds one improvement — the answer emerges from accumulated traces (stigmergy), with no roles or central coordinator. A final pass distills the scratchpad.',
+    endpoint: '/api/agents-v9',
+    agents: [
+      { id: 'agent 1', name: 'Swarm agent', role: 'One of many identical workers leaving traces' },
+    ],
+    suggestions: [
+      'Brainstorm and refine 10 product ideas for AI-native developer tools',
+      'Improve this onboarding flow iteratively: signup → first value in under 2 minutes',
+      'Find edge cases in a URL-shortener spec, building on each pass',
+      'Draft and progressively sharpen a mission statement for an AI tools company',
+    ],
+    durationHint: 'up to ~4 min',
+    howItWorks: [
+      'A swarm of identical agents all see the same shared scratchpad.',
+      'Each round, every agent reads the scratchpad and adds one improvement or new angle.',
+      'Contributions accumulate as traces others build on — no roles, no coordinator.',
+      'After a few rounds, a final pass distills the scratchpad into the answer.',
+    ],
+    whenToUse: 'Open-ended ideation and refinement that benefits from many cheap passes converging.',
+    tradeoff: 'No structure means redundancy and drift; convergence isn’t guaranteed, so it’s round-capped.',
+    references: [
+      { label: 'OpenAI Swarm — lightweight multi-agent orchestration', url: 'https://github.com/openai/swarm' },
+      { label: 'Stigmergy (collective coordination via shared environment)', url: 'https://en.wikipedia.org/wiki/Stigmergy' },
+    ],
+    note: 'The most “emergent” of the patterns — no roles, just many agents nudging a shared draft forward. Great for divergent ideation; weakest when the task needs a single rigorous line of reasoning.',
   },
 };
 
-export const MODE_LIST: ModeSpec[] = [MODES.v1, MODES.v2, MODES.v3, MODES.v4, MODES.v5, MODES.v6, MODES.v7];
+export const MODE_LIST: ModeSpec[] = [
+  MODES.v1, MODES.v2, MODES.v3, MODES.v4, MODES.v5, MODES.v6, MODES.v7, MODES.v8, MODES.v9,
+];
 
 /** Pretty-print an agent id like "writerAgent" → "Writer". */
 export function prettyAgentName(id: string): string {

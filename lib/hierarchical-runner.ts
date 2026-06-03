@@ -1,5 +1,6 @@
 import { Conversation } from "./conversation";
-import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel } from "./models";
+import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel, type ProviderId } from "./models";
+import { withProvider } from "./provider";
 import type { AgentEvent, EventSink } from "./agent-events";
 import { createNodeAgent } from "./agents-v3/node-agent";
 import * as log from "./logger";
@@ -42,6 +43,8 @@ export interface HierarchicalResult {
 
 export interface HierarchicalOptions {
   model?: OpenAIModel;
+  apiKey?: string;
+  providerId?: ProviderId;
 }
 
 /** Walk an agent result's tool outputs, calling `fn` for each value object. */
@@ -74,6 +77,8 @@ function readUsage(result: AgentResult) {
  */
 export class HierarchicalRunner {
   private model: OpenAIModel;
+  private apiKey?: string;
+  private providerId: ProviderId;
   private emit: EventSink = () => {};
   private nodeCount = 0;
   private totalIn = 0;
@@ -82,6 +87,8 @@ export class HierarchicalRunner {
 
   constructor(options: HierarchicalOptions = {}) {
     this.model = options.model ?? DEFAULT_MODEL;
+    this.apiKey = options.apiKey;
+    this.providerId = options.providerId ?? 'openai';
   }
 
   async run(
@@ -89,6 +96,7 @@ export class HierarchicalRunner {
     _conversation: Conversation = new Conversation(),
     onEvent?: EventSink,
   ): Promise<HierarchicalResult> {
+    return withProvider({ providerId: this.providerId, apiKey: this.apiKey }, async () => {
     this.emit = onEvent ?? (() => {});
     this.nodeCount = 0;
     this.totalIn = 0;
@@ -137,6 +145,7 @@ export class HierarchicalRunner {
       totalOutputTokens: this.totalOut,
       totalCostUsd: this.totalCost,
     };
+    });
   }
 
   /** Run one node: generate, spawn children (parallel), synthesize. Returns the node's deliverable. */

@@ -1,5 +1,5 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { provider } from "../provider";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 import { type AgentHooks } from "../agent-events";
@@ -27,7 +27,7 @@ export function createGeneratorAgent(model: OpenAIModel = DEFAULT_MODEL, hooks: 
   });
 
   return new Agent({
-    model: openai(model),
+    model: provider()(model),
     system:
       "You are the GENERATOR in an evaluator–optimizer loop. Your job is to produce a " +
       "high-quality deliverable that fully satisfies the user's request.\n\n" +

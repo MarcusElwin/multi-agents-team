@@ -1,5 +1,6 @@
 import { Conversation } from "./conversation";
-import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel } from "./models";
+import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel, type ProviderId } from "./models";
+import { withProvider } from "./provider";
 import type { AgentEvent, EventSink } from "./agent-events";
 import { createDebaterAgent } from "./agents-v5/debater-agent";
 import { createJudgeAgent } from "./agents-v5/judge-agent";
@@ -40,6 +41,8 @@ export interface DebateResult {
 
 export interface DebateOptions {
   model?: OpenAIModel;
+  apiKey?: string;
+  providerId?: ProviderId;
 }
 
 interface Verdict {
@@ -79,6 +82,8 @@ function readUsage(result: AgentResult) {
  */
 export class DebateRunner {
   private model: OpenAIModel;
+  private apiKey?: string;
+  private providerId: ProviderId;
   private emit: EventSink = () => {};
   private iteration = 0;
   private totalIn = 0;
@@ -87,6 +92,8 @@ export class DebateRunner {
 
   constructor(options: DebateOptions = {}) {
     this.model = options.model ?? DEFAULT_MODEL;
+    this.apiKey = options.apiKey;
+    this.providerId = options.providerId ?? 'openai';
   }
 
   async run(
@@ -94,6 +101,7 @@ export class DebateRunner {
     _conversation: Conversation = new Conversation(),
     onEvent?: EventSink,
   ): Promise<DebateResult> {
+    return withProvider({ providerId: this.providerId, apiKey: this.apiKey }, async () => {
     this.emit = onEvent ?? (() => {});
     this.iteration = 0;
     this.totalIn = 0;
@@ -175,6 +183,7 @@ export class DebateRunner {
       totalOutputTokens: this.totalOut,
       totalCostUsd: this.totalCost,
     };
+    });
   }
 
   /** Run one debater turn; returns its argument and accounts tokens/iteration. */

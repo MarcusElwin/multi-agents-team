@@ -1,13 +1,13 @@
 import { Experimental_Agent as Agent, stepCountIs, tool, generateObject, generateText } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
+import { provider, webSearchAvailable } from "../provider";
 import type { AgentHooks } from "../agent-events";
 import * as log from "../logger";
 
 export function createResearcherAgent(model: OpenAIModel = DEFAULT_MODEL, hooks: AgentHooks = {}) {
     return new Agent({
-    model: openai(model),
+    model: provider()(model),
     system: `You are the Researcher Agent - an expert in gathering and analyzing information.
 
     Your responsibilities:
@@ -35,6 +35,19 @@ export function createResearcherAgent(model: OpenAIModel = DEFAULT_MODEL, hooks:
                     .describe('What specific information to extract (e.g., "key benefits", "recent statistics", "main challenges")'),
             }),
             execute: async ({ query, extractionGoal }) => {
+                // Web search is OpenAI-only; degrade gracefully otherwise.
+                if (!webSearchAvailable()) {
+                    return {
+                        success: false,
+                        rawText: `Web search isn't available with the current model provider. Researching "${query}" from general knowledge.`,
+                        sources: [],
+                        structured: {
+                            summary: `Web search unavailable for: ${query}`,
+                            keyFindings: [{ finding: `Proceeding on general knowledge about ${query}.`, importance: 'medium' as const }],
+                            suggestedTopics: [],
+                        },
+                    };
+                }
                 log.detail('🔍 search', query);
                 log.detail('🎯 goal', extractionGoal);
                 hooks.onWebSearch?.({ status: 'start', query });
@@ -42,15 +55,15 @@ export function createResearcherAgent(model: OpenAIModel = DEFAULT_MODEL, hooks:
                 // Single active-spinner ref so the catch can always stop the
                 // one that's running, whichever phase failed.
                 let spin = log.spinner(`searching the web: "${query.slice(0, 50)}${query.length > 50 ? '…' : ''}"`);
+                const p = provider();
                 try {
                     // Step 1: OpenAI web search with sourced citations. Uses the
-                    // run's selected model (was hardcoded to gpt-4.1). Tool key
-                    // must be `web_search` for the current openai.tools.webSearch.
+                    // run's selected model. Tool key must be `web_search`.
                     const { text, sources } = await generateText({
-                        model: openai.responses(model),
+                        model: p.responses!(model),
                         prompt: `${query}\n\nFocus on: ${extractionGoal}`,
                         tools: {
-                            web_search: openai.tools.webSearch({}),
+                            web_search: p.tools!.webSearch({}) as never,
                         },
                     });
 
@@ -60,7 +73,7 @@ export function createResearcherAgent(model: OpenAIModel = DEFAULT_MODEL, hooks:
                     spin = log.spinner('structuring findings…');
                     // Step 2: Use generateObject to structure the findings
                     const structuredData = await generateObject({
-                        model: openai.responses(model),
+                        model: p.responses!(model),
                         schema: z.object({
                             summary: z.string()
                                 .describe('Brief summary of findings'),

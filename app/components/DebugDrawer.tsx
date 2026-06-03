@@ -424,6 +424,20 @@ function eventMeta(event: AgentEvent): {
         tone: 'border-emerald-200 bg-emerald-50 text-emerald-700',
         headline: `${event.taskId} → ${event.agent}`,
       };
+    case 'sample':
+      return {
+        tag: `sample ${event.index + 1}`,
+        tone: 'border-violet-200 bg-violet-50 text-violet-700',
+        headline: `sample ${event.index + 1} done`,
+        subline: event.preview,
+      };
+    case 'trace':
+      return {
+        tag: `round ${event.round}`,
+        tone: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+        headline: `${event.agent} added a trace`,
+        subline: event.preview,
+      };
     default: {
       // Exhaustiveness guard: if a new AgentEvent variant is added without a
       // case above, TS errors here on the `never` assignment.

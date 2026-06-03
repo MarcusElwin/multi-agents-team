@@ -1,5 +1,5 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { provider } from "../provider";
 import { MessageBus } from "../message-bus";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
@@ -9,7 +9,7 @@ import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 
 export function createDesignAgent(model: OpenAIModel = DEFAULT_MODEL, bus: MessageBus = new MessageBus()) {
     return new Agent({
-    model: openai(model),
+    model: provider()(model),
     system: `You are the Design Agent - an expert in Product design, design thinking and user experience.
     You are obsessed with pixels and details! It needs to look good and have taste!
 

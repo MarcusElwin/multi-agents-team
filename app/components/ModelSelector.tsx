@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Check, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
-import { MODEL_OPTIONS, type OpenAIModel } from '@/lib/models';
+import { MODEL_OPTIONS, PROVIDER_LIST, type OpenAIModel } from '@/lib/models';
 
 export function ModelSelector({
   value,
@@ -47,36 +47,44 @@ export function ModelSelector({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-64 overflow-hidden rounded-xl border border-stone-200 bg-white py-1 shadow-lg">
-          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-stone-400">
-            OpenAI
-          </div>
-          {MODEL_OPTIONS.map((opt) => {
-            const selected = opt.value === value;
+        <div className="absolute right-0 top-full z-50 mt-1 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-stone-200 bg-white py-1 shadow-lg [scrollbar-width:thin]">
+          {PROVIDER_LIST.map((p) => {
+            const models = MODEL_OPTIONS.filter((m) => m.provider === p.id);
+            if (models.length === 0) return null;
             return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => {
-                  onChange(opt.value);
-                  setOpen(false);
-                }}
-                className={cn(
-                  'flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors',
-                  selected ? 'bg-stone-100' : 'hover:bg-stone-50'
-                )}
-              >
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-stone-100">
-                  <Sparkles className="h-3.5 w-3.5 text-stone-600" />
+              <div key={p.id}>
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-stone-400">
+                  {p.label}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-stone-900">{opt.label}</div>
-                  {opt.description && (
-                    <div className="truncate text-[11px] text-stone-500">{opt.description}</div>
-                  )}
-                </div>
-                {selected && <Check className="h-4 w-4 shrink-0 text-stone-600" />}
-              </button>
+                {models.map((opt) => {
+                  const selected = opt.value === value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        onChange(opt.value);
+                        setOpen(false);
+                      }}
+                      className={cn(
+                        'flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors',
+                        selected ? 'bg-stone-100' : 'hover:bg-stone-50'
+                      )}
+                    >
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-stone-100">
+                        <Sparkles className="h-3.5 w-3.5 text-stone-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-stone-900">{opt.label}</div>
+                        {opt.description && (
+                          <div className="truncate text-[11px] text-stone-500">{opt.description}</div>
+                        )}
+                      </div>
+                      {selected && <Check className="h-4 w-4 shrink-0 text-stone-600" />}
+                    </button>
+                  );
+                })}
+              </div>
             );
           })}
         </div>

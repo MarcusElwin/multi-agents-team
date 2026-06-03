@@ -1,5 +1,5 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { provider } from "../provider";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 import { type AgentHooks } from "../agent-events";
@@ -36,7 +36,7 @@ export function createCriticAgent(model: OpenAIModel = DEFAULT_MODEL, hooks: Age
   });
 
   return new Agent({
-    model: openai(model),
+    model: provider()(model),
     system:
       "You are the CRITIC in an evaluator–optimizer loop. You are a demanding, rigorous " +
       "reviewer. Score the draft against the user's request on four dimensions:\n" +

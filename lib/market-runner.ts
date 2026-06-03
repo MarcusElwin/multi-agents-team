@@ -1,5 +1,6 @@
 import { Conversation } from "./conversation";
-import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel } from "./models";
+import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel, type ProviderId } from "./models";
+import { withProvider } from "./provider";
 import type { AgentEvent, EventSink, RunSummary } from "./agent-events";
 import { createDispatcherAgent } from "./agents-v7/dispatcher-agent";
 import { createWorkerAgent } from "./agents-v7/worker-agent";
@@ -51,6 +52,8 @@ export interface MarketResult {
 
 export interface MarketOptions {
   model?: OpenAIModel;
+  apiKey?: string;
+  providerId?: ProviderId;
 }
 
 /** Walk an agent result's tool outputs, calling `fn` for each value object. */
@@ -84,6 +87,8 @@ function readUsage(result: AgentResult) {
  */
 export class MarketRunner {
   private model: OpenAIModel;
+  private apiKey?: string;
+  private providerId: ProviderId;
   private emit: EventSink = () => {};
   private iterations = 0;
   private totalIn = 0;
@@ -92,6 +97,8 @@ export class MarketRunner {
 
   constructor(options: MarketOptions = {}) {
     this.model = options.model ?? DEFAULT_MODEL;
+    this.apiKey = options.apiKey;
+    this.providerId = options.providerId ?? 'openai';
   }
 
   async run(
@@ -99,6 +106,7 @@ export class MarketRunner {
     _conversation: Conversation = new Conversation(),
     onEvent?: EventSink,
   ): Promise<MarketResult> {
+    return withProvider({ providerId: this.providerId, apiKey: this.apiKey }, async () => {
     this.emit = onEvent ?? (() => {});
     this.iterations = 0;
     this.totalIn = 0;
@@ -169,6 +177,7 @@ export class MarketRunner {
       tasks: summaryTasks,
       bids: summaryBids,
       awards: summaryAwards,
+    });
     });
   }
 

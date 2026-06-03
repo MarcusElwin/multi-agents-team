@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import {
-  Check, ChevronRight, Scale, LayoutGrid, Gavel, RefreshCw, Trophy, Gauge,
+  Check, ChevronRight, Scale, LayoutGrid, Gavel, RefreshCw, Trophy, Gauge, Copy, Boxes,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { prettyAgentName } from '@/lib/modes';
@@ -21,6 +21,10 @@ export function StrategyView({ summary }: { summary: RunSummary }) {
       return <BlackboardView sections={summary.sections} />;
     case 'market':
       return <MarketView summary={summary} />;
+    case 'self-consistency':
+      return <SelfConsistencyView summary={summary} />;
+    case 'swarm':
+      return <SwarmView summary={summary} />;
     default:
       return null;
   }
@@ -205,6 +209,83 @@ function MarketView({ summary }: { summary: Extract<RunSummary, { kind: 'market'
             </div>
           );
         })}
+      </div>
+    </Card>
+  );
+}
+
+// ── v8 Self-Consistency: parallel samples + the judge's pick/merge ─────────
+function SelfConsistencyView({ summary }: { summary: Extract<RunSummary, { kind: 'self-consistency' }> }) {
+  const [open, setOpen] = useState<number | null>(null);
+  return (
+    <Card
+      icon={<Copy className="h-3.5 w-3.5" />}
+      title={`Self-Consistency · ${summary.samples.length} samples · ${summary.method === 'merge' ? 'merged' : 'selected'}`}
+    >
+      <div className="space-y-1.5">
+        {summary.samples.map((s) => {
+          const expanded = open === s.index;
+          return (
+            <div
+              key={s.index}
+              className={cn('rounded-xl border', s.chosen ? 'border-emerald-200 bg-emerald-50/40' : 'border-stone-100 bg-stone-50/50')}
+            >
+              <button
+                type="button"
+                onClick={() => setOpen(expanded ? null : s.index)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left"
+              >
+                <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-stone-400 transition-transform', expanded && 'rotate-90')} />
+                <span className="text-sm font-medium text-stone-700">Sample {s.index + 1}</span>
+                {s.chosen && (
+                  <span className="inline-flex items-center gap-0.5 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                    <Check className="h-2.5 w-2.5" /> chosen
+                  </span>
+                )}
+                {!expanded && <span className="ml-auto truncate text-[11px] text-stone-400">{s.text.slice(0, 48)}…</span>}
+              </button>
+              {expanded && (
+                <div className="px-3 pb-3 text-sm">
+                  <div className="rounded-lg border border-stone-100 bg-white px-3 py-2">
+                    <MarkdownContent content={s.text} />
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {summary.rationale && (
+        <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50/70 p-3">
+          <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-stone-500">
+            <Trophy className="h-3.5 w-3.5" /> Judge · {summary.method === 'merge' ? 'merged consensus' : 'selected best'}
+          </div>
+          <p className="text-[12px] leading-snug text-stone-600">{summary.rationale}</p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ── v9 Swarm: the shared scratchpad of traces, grouped by round ────────────
+function SwarmView({ summary }: { summary: Extract<RunSummary, { kind: 'swarm' }> }) {
+  const rounds = Array.from(new Set(summary.traces.map((t) => t.round))).sort((a, b) => a - b);
+  return (
+    <Card icon={<Boxes className="h-3.5 w-3.5" />} title={`Swarm · ${summary.rounds} round${summary.rounds === 1 ? '' : 's'} · ${summary.traces.length} traces`}>
+      <div className="space-y-3">
+        {rounds.map((round) => (
+          <div key={round}>
+            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-stone-400">Round {round}</div>
+            <div className="space-y-1.5">
+              {summary.traces.filter((t) => t.round === round).map((t, i) => (
+                <div key={i} className="rounded-lg border border-stone-100 bg-stone-50/50 px-3 py-2">
+                  <div className="mb-0.5 text-[10px] font-medium text-stone-400">{t.agent}</div>
+                  <div className="text-[13px] text-stone-700"><MarkdownContent content={t.text} /></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </Card>
   );

@@ -1,5 +1,19 @@
 # Multi-Agent AI System
 
+[![Live demo](https://img.shields.io/badge/demo-mat.umai--tech.com-000?logo=vercel&logoColor=white)](https://mat.umai-tech.com)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000?logo=nextdotjs&logoColor=white)](https://nextjs.org)
+[![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)](https://react.dev)
+[![Vercel AI SDK](https://img.shields.io/badge/Vercel%20AI%20SDK-5-000?logo=vercel&logoColor=white)](https://sdk.vercel.ai)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/MarcusElwin/multi-agents-team?style=flat&logo=github)](https://github.com/MarcusElwin/multi-agents-team/stargazers)
+
+[![Patterns](https://img.shields.io/badge/patterns-9_(v1–v9)-blue)](#overview)
+[![OpenAI](https://img.shields.io/badge/OpenAI-gpt--5.5-412991?logo=openai&logoColor=white)](https://platform.openai.com)
+[![Anthropic](https://img.shields.io/badge/Anthropic-Claude-D97757?logo=anthropic&logoColor=white)](https://www.anthropic.com)
+[![Mistral AI](https://img.shields.io/badge/Mistral_AI-FA520F?logo=mistralai&logoColor=white)](https://mistral.ai)
+[![Fireworks AI](https://img.shields.io/badge/Fireworks_AI-6720FF)](https://fireworks.ai)
+
 A multi-agent AI playground built with **Next.js 16** and the **Vercel AI SDK**.
 It ships **nine multi-agent coordination patterns** (v1–v9) over a shared
 event/message layer — each exposed as its own streaming API route and selectable

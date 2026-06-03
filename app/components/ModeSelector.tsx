@@ -52,7 +52,7 @@ export function ModeSelector({
       {open && (
         <div
           role="listbox"
-          className="absolute right-0 top-full z-50 mt-1 max-h-[min(70vh,24rem)] w-[min(18rem,calc(100vw-1.5rem))] overflow-y-auto overscroll-contain rounded-xl border border-stone-200 bg-white py-1 shadow-lg [scrollbar-width:thin]"
+          className="absolute left-0 top-full z-50 mt-1 max-h-[min(70vh,24rem)] w-[min(18rem,calc(100vw-1.5rem))] overflow-y-auto overscroll-contain rounded-xl border border-stone-200 bg-white py-1 shadow-lg [scrollbar-width:thin]"
         >
           <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-stone-400">
             Agentic system

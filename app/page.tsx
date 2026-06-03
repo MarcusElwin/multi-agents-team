@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight, Code2, KeyRound, Sparkles, Star, GitFork } from 'lucide-react';
 import { ArchitectureCards } from './components/ArchitectureCards';
+import { AgentFlow } from './components/AgentFlow';
 
 export const metadata = {
   title: 'Multi-Agent Team — nine ways to coordinate LLM agents',
@@ -156,6 +157,15 @@ export default async function Landing() {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* How it works — animated flow */}
+      <section className="mx-auto max-w-5xl px-6 pb-16">
+        <h2 className="mb-2 text-center text-2xl font-semibold tracking-tight">How a team handles one request</h2>
+        <p className="mb-6 text-center text-sm text-stone-500">
+          A coordinator plans, delegates to specialists, and synthesizes the result — live.
+        </p>
+        <AgentFlow />
       </section>
 
       {/* Patterns */}

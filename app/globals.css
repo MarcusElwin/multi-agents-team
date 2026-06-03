@@ -31,3 +31,155 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   AgentFlow — looping animation of a research task through the v1 pipeline.
+   One loop ≈ 9s. Everything is scoped under .agentflow and collapses to a calm
+   static diagram under prefers-reduced-motion.
+   ─────────────────────────────────────────────────────────────────────────── */
+.agentflow {
+  --af-loop: 9s;
+}
+
+/* Query chip: a soft "just-typed" entrance + a blinking cursor. */
+.agentflow .af-query {
+  animation: af-query-in var(--af-loop) ease-in-out infinite;
+}
+.agentflow .af-cursor {
+  animation: af-blink 1s step-end infinite;
+}
+
+/* Vertical wire pulse (query → coordinator): a dot slides down the wire. */
+.agentflow .af-wire-pulse {
+  top: -6px;
+  opacity: 0;
+  animation: af-wire-travel var(--af-loop) ease-in-out infinite;
+}
+
+/* Nodes start dim; each "lights up" when the task reaches it. */
+.agentflow .af-node {
+  transition: none;
+}
+.agentflow .af-coordinator {
+  animation: af-light var(--af-loop) ease-in-out infinite;
+  animation-delay: calc(var(--af-loop) * 0.12);
+}
+.agentflow .af-coordinator .af-dot {
+  animation: af-dot-ping var(--af-loop) ease-out infinite;
+  animation-delay: calc(var(--af-loop) * 0.12);
+}
+
+/* Three specialists light up in turn. */
+.agentflow .af-agent {
+  opacity: 0.45;
+  animation: af-light var(--af-loop) ease-in-out infinite;
+}
+.agentflow .af-agent-1 { animation-delay: calc(var(--af-loop) * 0.34); }
+.agentflow .af-agent-2 { animation-delay: calc(var(--af-loop) * 0.46); }
+.agentflow .af-agent-3 { animation-delay: calc(var(--af-loop) * 0.58); }
+
+/* The little "working" bar inside each specialist slides while it's active. */
+.agentflow .af-agent .af-bar { opacity: 0; }
+.agentflow .af-agent-1 .af-bar { animation: af-work var(--af-loop) ease-in-out infinite; animation-delay: calc(var(--af-loop) * 0.34); }
+.agentflow .af-agent-2 .af-bar { animation: af-work var(--af-loop) ease-in-out infinite; animation-delay: calc(var(--af-loop) * 0.46); }
+.agentflow .af-agent-3 .af-bar { animation: af-work var(--af-loop) ease-in-out infinite; animation-delay: calc(var(--af-loop) * 0.58); }
+
+/* Connector wires: faint by default, drawn-in with a sweeping highlight. */
+.agentflow .af-branch {
+  fill: none;
+  stroke: var(--color-stone-200, #e7e5e4);
+  stroke-width: 1.5;
+}
+
+/* Fan-out "comet": a short bright dash runs along each branch, staggered.
+   pathLength=100 makes the dash maths width-independent (no distortion). */
+.agentflow .af-flow {
+  fill: none;
+  stroke: #1c1917;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 18 100;
+  stroke-dashoffset: 118; /* dash parked before the start */
+  opacity: 0;
+}
+.agentflow .af-flow-1 { animation: af-comet var(--af-loop) ease-in infinite; animation-delay: calc(var(--af-loop) * 0.24); }
+.agentflow .af-flow-2 { animation: af-comet var(--af-loop) ease-in infinite; animation-delay: calc(var(--af-loop) * 0.36); }
+.agentflow .af-flow-3 { animation: af-comet var(--af-loop) ease-in infinite; animation-delay: calc(var(--af-loop) * 0.48); }
+
+/* Final answer: pops in once the specialists have finished. */
+.agentflow .af-answer {
+  opacity: 0;
+  transform: scale(0.96);
+  animation: af-answer-in var(--af-loop) ease-out infinite;
+  animation-delay: calc(var(--af-loop) * 0.72);
+}
+
+@keyframes af-query-in {
+  0%, 4% { opacity: 0; transform: translateY(4px); }
+  10%, 92% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0.6; }
+}
+@keyframes af-blink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0; } }
+
+@keyframes af-wire-travel {
+  0%, 8% { opacity: 0; top: -6px; }
+  9% { opacity: 1; }
+  16% { opacity: 1; top: calc(100% - 6px); }
+  18%, 100% { opacity: 0; top: calc(100% - 6px); }
+}
+
+/* "Light up": lift from dim → full with a subtle ring + raise. */
+@keyframes af-light {
+  0%, 100% { opacity: 0.45; box-shadow: 0 0 0 0 rgba(28, 25, 23, 0); transform: translateY(0); }
+  /* held bright across the middle of the loop */
+  20%, 80% { opacity: 1; box-shadow: 0 1px 12px -2px rgba(28, 25, 23, 0.18); transform: translateY(-1px); }
+}
+.agentflow .af-coordinator { opacity: 0.5; }
+
+@keyframes af-dot-ping {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(28, 25, 23, 0.35); }
+  20% { box-shadow: 0 0 0 5px rgba(28, 25, 23, 0); }
+}
+
+@keyframes af-work {
+  0%, 100% { opacity: 0; transform: translateX(-120%); }
+  6% { opacity: 1; }
+  40% { transform: translateX(320%); opacity: 1; }
+  46% { opacity: 0; }
+}
+
+@keyframes af-comet {
+  0% { opacity: 0; stroke-dashoffset: 118; }
+  3% { opacity: 1; }
+  20% { opacity: 1; stroke-dashoffset: 0; }
+  24%, 100% { opacity: 0; stroke-dashoffset: 0; }
+}
+
+@keyframes af-answer-in {
+  0%, 4% { opacity: 0; transform: scale(0.96) translateY(4px); }
+  14%, 92% { opacity: 1; transform: scale(1) translateY(0); }
+  100% { opacity: 0; }
+}
+
+/* Calm static fallback — no motion, but the diagram still reads clearly. */
+@media (prefers-reduced-motion: reduce) {
+  .agentflow .af-query,
+  .agentflow .af-cursor,
+  .agentflow .af-wire-pulse,
+  .agentflow .af-coordinator,
+  .agentflow .af-coordinator .af-dot,
+  .agentflow .af-agent,
+  .agentflow .af-agent .af-bar,
+  .agentflow .af-flow,
+  .agentflow .af-answer {
+    animation: none;
+  }
+  .agentflow .af-query,
+  .agentflow .af-coordinator,
+  .agentflow .af-agent,
+  .agentflow .af-answer { opacity: 1; transform: none; }
+  .agentflow .af-wire-pulse,
+  .agentflow .af-cursor,
+  .agentflow .af-flow { opacity: 0; }
+  .agentflow .af-agent .af-bar { opacity: 1; }
+}

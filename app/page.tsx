@@ -183,7 +183,7 @@ export default async function Landing() {
       <footer className="border-t border-stone-200 py-8 text-center text-xs text-stone-400">
         Made with <span className="text-red-400">♥</span> in Stockholm by{' '}
         <a
-          href="https://umaitech.com"
+          href="https://umai-tech.com"
           target="_blank"
           rel="noopener noreferrer"
           className="font-medium text-stone-500 underline-offset-2 hover:text-stone-900 hover:underline"

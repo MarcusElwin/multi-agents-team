@@ -88,7 +88,7 @@ export default async function ArchitecturePage({ params }: { params: Promise<{ m
 
       <footer className="border-t border-stone-200 py-8 text-center text-xs text-stone-400">
         Made with <span className="text-red-400">♥</span> in Stockholm by{' '}
-        <a href="https://umaitech.com" target="_blank" rel="noopener noreferrer" className="font-medium text-stone-500 hover:text-stone-900 hover:underline">
+        <a href="https://umai-tech.com" target="_blank" rel="noopener noreferrer" className="font-medium text-stone-500 hover:text-stone-900 hover:underline">
           Marcus Elwin @ UmaiTech
         </a>
       </footer>

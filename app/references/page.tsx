@@ -1,8 +1,28 @@
 import Link from 'next/link';
-import { ArrowLeft, ArrowUpRight, Sparkles } from 'lucide-react';
-import { REFERENCE_SECTIONS, type RefType } from '@/lib/references';
+import { ArrowLeft, ArrowUpRight, Sparkles, FileText } from 'lucide-react';
+import { REFERENCE_SECTIONS, type RefType, logoFor, DARK_LOGOS } from '@/lib/references';
 import { MODE_LIST } from '@/lib/modes';
 import { ExportReport } from '@/app/components/ExportReport';
+
+/** A source logo (local SVG) in a tile — dark tile for white-art logos. */
+function SourceLogo({ source, url }: { source: string; url: string }) {
+  const slug = logoFor(source, url);
+  const dark = slug ? DARK_LOGOS.has(slug) : false;
+  return (
+    <span
+      className={`flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border ${
+        dark ? 'border-stone-800 bg-stone-900' : 'border-stone-200 bg-stone-50'
+      }`}
+    >
+      {slug ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={`/logos/${slug}.svg`} alt="" className="h-5 w-5 object-contain" />
+      ) : (
+        <FileText className="h-4 w-4 text-stone-400" />
+      )}
+    </span>
+  );
+}
 
 export const metadata = {
   title: 'References — multi-agent systems reading list',
@@ -38,6 +58,7 @@ function RefRow({
       rel="noopener noreferrer"
       className="group flex items-start gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 transition-colors hover:border-stone-300 hover:bg-stone-50"
     >
+      <SourceLogo source={source} url={url} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium text-stone-900 group-hover:underline">{title}</span>

@@ -20,6 +20,46 @@ export interface ReferenceSection {
   items: Reference[];
 }
 
+/**
+ * Brand logos (local SVGs under /public/logos, sourced from thesvg.org).
+ * Keyed by a normalized source/host. White-filled logos (openai, anthropic,
+ * vercel) are listed in DARK_LOGOS so the UI renders them on a dark tile.
+ */
+const LOGO_BY_SOURCE: Record<string, string> = {
+  anthropic: 'anthropic',
+  'anthropic engineering': 'anthropic',
+  openai: 'openai',
+  vercel: 'vercel',
+  langchain: 'langchain',
+  microsoft: 'microsoft',
+  crewai: 'crewai',
+  'mit acl': 'arxiv', // no MIT mark on thesvg.org — use the paper/arxiv glyph
+  wikipedia: 'wikipedia',
+  medium: 'medium',
+};
+const HOST_LOGO: Array<[RegExp, string]> = [
+  [/arxiv\.org/, 'arxiv'],
+  [/github\.com/, 'github'],
+  [/anthropic\.com/, 'anthropic'],
+  [/openai\.com/, 'openai'],
+  [/ai-sdk\.dev|vercel/, 'vercel'],
+  [/langchain/, 'langchain'],
+  [/microsoft/, 'microsoft'],
+  [/crewai/, 'crewai'],
+  [/wikipedia\.org/, 'wikipedia'],
+  [/medium\.com/, 'medium'],
+];
+/** Logos whose artwork is white/light and need a dark tile behind them. */
+export const DARK_LOGOS = new Set(['openai', 'anthropic', 'vercel']);
+
+/** Resolve a local logo slug for a reference (by source name, then URL host). */
+export function logoFor(source: string, url: string): string | null {
+  const s = source.toLowerCase().trim();
+  if (LOGO_BY_SOURCE[s]) return LOGO_BY_SOURCE[s];
+  for (const [re, slug] of HOST_LOGO) if (re.test(url)) return slug;
+  return null;
+}
+
 export const REFERENCE_SECTIONS: ReferenceSection[] = [
   {
     heading: 'Start here',
@@ -97,7 +137,7 @@ export const REFERENCE_SECTIONS: ReferenceSection[] = [
       {
         title: 'Consensus-Based Bundle Algorithm (CBBA)',
         source: 'MIT ACL',
-        url: 'https://acl.mit.edu/papers/HowTAC2009.pdf',
+        url: 'https://acl.mit.edu/projects/consensus-based-bundle-algorithm',
         type: 'Paper',
         note: 'Market/auction task allocation from multi-robot systems — the basis of v7.',
       },

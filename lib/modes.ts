@@ -288,7 +288,7 @@ export const MODES: Record<Mode, ModeSpec> = {
     tradeoff: 'The bid round is extra LLM calls; only worth it for larger, varied agent pools.',
     references: [
       { label: 'The 5th orchestration pattern: market-based task allocation', url: 'https://dev.to/slythefox/the-5th-agent-orchestration-pattern-market-based-task-allocation-db0' },
-      { label: 'Consensus-Based Bundle Algorithm (CBBA)', url: 'https://acl.mit.edu/papers/HowTAC2009.pdf' },
+      { label: 'Consensus-Based Bundle Algorithm (CBBA)', url: 'https://acl.mit.edu/projects/consensus-based-bundle-algorithm' },
     ],
     note: 'Competitive bidding spreads work to the best-fit agent and makes cost visible, but the bid round is extra calls — it pays off mainly with larger, heterogeneous agent pools.',
   },

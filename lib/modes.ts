@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
-import { Workflow, Network, GitBranch, RefreshCw, Scale, LayoutGrid, Gavel } from 'lucide-react';
+import { Workflow, Network, GitBranch, RefreshCw, Scale, LayoutGrid, Gavel, Copy, Boxes } from 'lucide-react';
 
-export type Mode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7';
+export type Mode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7' | 'v8' | 'v9';
 
 export interface AgentSpec {
   /** Canonical agent id used on the bus / in events. */
@@ -292,9 +292,78 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     note: 'Competitive bidding spreads work to the best-fit agent and makes cost visible, but the bid round is extra calls — it pays off mainly with larger, heterogeneous agent pools.',
   },
+  v8: {
+    value: 'v8',
+    label: 'v8 self-consistency',
+    pattern: 'Self-Consistency',
+    icon: Copy,
+    tagline: 'sample in parallel, judge the best',
+    description:
+      'The same task is sampled several times independently and in parallel; a judge then either selects the strongest answer or merges the candidates into a consensus. Best for questions where a single attempt is unreliable but agreement across attempts signals a good answer.',
+    endpoint: '/api/agents-v8',
+    agents: [
+      { id: 'sampler', name: 'Sampler', role: 'Produces one independent attempt (×N in parallel)' },
+      { id: 'judge', name: 'Judge', role: 'Selects the best sample or merges a consensus' },
+    ],
+    suggestions: [
+      'What is the most defensible answer: is a hot dog a sandwich? Reason it out.',
+      'Estimate the number of piano tuners in Chicago, showing your reasoning',
+      'Propose the single best name for a CLI that runs multi-agent workflows',
+      'What’s the strongest one-paragraph case for using TypeScript over JavaScript?',
+    ],
+    durationHint: 'up to ~2 min',
+    howItWorks: [
+      'The task is sent to N sampler agents that run independently and in parallel.',
+      'Each produces its own complete answer, unaware of the others.',
+      'A judge reads all N candidates.',
+      'The judge selects the strongest, or merges complementary answers into one.',
+    ],
+    whenToUse: 'Questions where one attempt is noisy but agreement across attempts signals quality.',
+    tradeoff: 'N parallel samples cost N× the tokens of a single attempt for the sampling step.',
+    references: [
+      { label: 'Self-Consistency Improves Chain of Thought Reasoning', url: 'https://arxiv.org/abs/2203.11171' },
+      { label: 'Anthropic — Building effective agents (Parallelization)', url: 'https://www.anthropic.com/research/building-effective-agents' },
+    ],
+    note: 'Cheap reliability boost on reasoning-heavy questions: sample a few times, let a judge reconcile. The judge’s merge step is where a lot of the value is — it’s not just a vote.',
+  },
+  v9: {
+    value: 'v9',
+    label: 'v9 swarm',
+    pattern: 'Swarm',
+    icon: Boxes,
+    tagline: 'identical agents build on a shared scratchpad',
+    description:
+      'A swarm of identical, role-less agents works the same problem over several rounds. Each round, every agent reads the shared scratchpad of contributions so far and adds one improvement — the answer emerges from accumulated traces (stigmergy), with no roles or central coordinator. A final pass distills the scratchpad.',
+    endpoint: '/api/agents-v9',
+    agents: [
+      { id: 'agent 1', name: 'Swarm agent', role: 'One of many identical workers leaving traces' },
+    ],
+    suggestions: [
+      'Brainstorm and refine 10 product ideas for AI-native developer tools',
+      'Improve this onboarding flow iteratively: signup → first value in under 2 minutes',
+      'Find edge cases in a URL-shortener spec, building on each pass',
+      'Draft and progressively sharpen a mission statement for an AI tools company',
+    ],
+    durationHint: 'up to ~4 min',
+    howItWorks: [
+      'A swarm of identical agents all see the same shared scratchpad.',
+      'Each round, every agent reads the scratchpad and adds one improvement or new angle.',
+      'Contributions accumulate as traces others build on — no roles, no coordinator.',
+      'After a few rounds, a final pass distills the scratchpad into the answer.',
+    ],
+    whenToUse: 'Open-ended ideation and refinement that benefits from many cheap passes converging.',
+    tradeoff: 'No structure means redundancy and drift; convergence isn’t guaranteed, so it’s round-capped.',
+    references: [
+      { label: 'OpenAI Swarm — lightweight multi-agent orchestration', url: 'https://github.com/openai/swarm' },
+      { label: 'Stigmergy (collective coordination via shared environment)', url: 'https://en.wikipedia.org/wiki/Stigmergy' },
+    ],
+    note: 'The most “emergent” of the patterns — no roles, just many agents nudging a shared draft forward. Great for divergent ideation; weakest when the task needs a single rigorous line of reasoning.',
+  },
 };
 
-export const MODE_LIST: ModeSpec[] = [MODES.v1, MODES.v2, MODES.v3, MODES.v4, MODES.v5, MODES.v6, MODES.v7];
+export const MODE_LIST: ModeSpec[] = [
+  MODES.v1, MODES.v2, MODES.v3, MODES.v4, MODES.v5, MODES.v6, MODES.v7, MODES.v8, MODES.v9,
+];
 
 /** Pretty-print an agent id like "writerAgent" → "Writer". */
 export function prettyAgentName(id: string): string {

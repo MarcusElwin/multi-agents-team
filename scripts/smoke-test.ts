@@ -11,6 +11,8 @@ import { runEvaluatorOptimizer } from '../lib/evaluator-optimizer-runner';
 import { runDebate } from '../lib/debate-runner';
 import { runBlackboard } from '../lib/blackboard-runner';
 import { runMarket } from '../lib/market-runner';
+import { runSelfConsistency } from '../lib/self-consistency-runner';
+import { runSwarm } from '../lib/swarm-runner';
 import { Conversation } from '../lib/conversation';
 import type { AgentEvent } from '../lib/agent-events';
 
@@ -43,6 +45,8 @@ const MODES: Record<string, Runner> = {
   v5: (m, o, e, c) => runDebate(m, o, e, c),
   v6: (m, o, e, c) => runBlackboard(m, o, e, c),
   v7: (m, o, e, c) => runMarket(m, o, e, c),
+  v8: (m, o, e, c) => runSelfConsistency(m, o, e, c),
+  v9: (m, o, e, c) => runSwarm(m, o, e, c),
 };
 
 async function runMode(name: string): Promise<{ name: string; ok: boolean; detail: string }> {

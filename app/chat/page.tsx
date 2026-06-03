@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, type FormEvent } from 'react';
-import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown, Code2, Network, Settings } from 'lucide-react';
+import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown, Code2, Network, Settings, Menu } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { DEFAULT_MODEL, formatCost, providerForModel, type OpenAIModel } from '@/lib/models';
 import { MODES, type Mode, prettyAgentName } from '@/lib/modes';
@@ -115,6 +115,8 @@ export default function Home() {
   const viewedIdRef = useRef<string | null>(null);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Mobile off-canvas sidebar (hidden by default on phones).
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // When the active conversation changes (switch or hydrate), load its stored
   // messages and the mode/model it was held in. Runs keep going in the
@@ -479,30 +481,51 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-stone-50 text-stone-900">
-      <ChatSidebar
-        conversations={conversations}
-        activeId={activeId}
-        runningIds={runningIds}
-        collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed((v) => !v)}
-        onNew={startNewChat}
-        onSelect={handleSelectConversation}
-        onDelete={handleDeleteConversation}
-      />
+      {/* Sidebar: in-flow on md+, an off-canvas overlay on mobile. */}
+      <div
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 transition-transform md:static md:z-auto md:translate-x-0',
+          mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
+        <ChatSidebar
+          conversations={conversations}
+          activeId={activeId}
+          runningIds={runningIds}
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed((v) => !v)}
+          onNew={() => { startNewChat(); setMobileSidebarOpen(false); }}
+          onSelect={(id) => { handleSelectConversation(id); setMobileSidebarOpen(false); }}
+          onDelete={handleDeleteConversation}
+        />
+      </div>
+      {/* Mobile backdrop when the sidebar overlay is open. */}
+      {mobileSidebarOpen && (
+        <div className="fixed inset-0 z-40 bg-stone-900/20 backdrop-blur-[2px] md:hidden" onClick={() => setMobileSidebarOpen(false)} aria-hidden />
+      )}
       <div className="flex min-w-0 flex-1 flex-col">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-stone-200 bg-white/70 px-4 backdrop-blur">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-900 text-white">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-stone-200 bg-white/70 px-3 backdrop-blur sm:px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          {/* Hamburger — opens the sidebar overlay on mobile only. */}
+          <button
+            type="button"
+            onClick={() => setMobileSidebarOpen(true)}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-stone-600 hover:bg-stone-100 md:hidden"
+            aria-label="Open chats"
+          >
+            <Menu className="h-4 w-4" />
+          </button>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-stone-900 text-white">
             <Sparkles className="h-4 w-4" />
           </div>
-          <div>
-            <div className="text-sm font-semibold leading-tight">Multi-Agent Team</div>
-            <div className="text-[11px] leading-tight text-stone-500">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold leading-tight">Multi-Agent Team</div>
+            <div className="hidden truncate text-[11px] leading-tight text-stone-500 sm:block">
               {spec.pattern} · {spec.tagline}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <ModelSelector value={model} onChange={setModel} disabled={isLoading} />
           <ModeSelector value={mode} onChange={setMode} disabled={isLoading} />
           <button
@@ -524,15 +547,16 @@ export default function Home() {
             type="button"
             onClick={() => setArchOpen((v) => !v)}
             className={cn(
-              'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+              'flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition-colors sm:px-3',
               archOpen
                 ? 'border-stone-900 bg-stone-900 text-white'
                 : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:text-stone-900',
             )}
             aria-pressed={archOpen}
+            aria-label="Architecture"
           >
             <Network className="h-3.5 w-3.5" />
-            Architecture
+            <span className="hidden sm:inline">Architecture</span>
           </button>
           <DebugToggle
             open={debugOpen}

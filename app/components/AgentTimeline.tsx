@@ -45,7 +45,7 @@ export interface LiveAgent {
 
 interface AgentTimelineProps {
   agents: LiveAgent[];
-  mode: 'v1' | 'v2' | 'v3';
+  mode: 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7';
   currentAgent?: string;
   iteration?: number;
   now: number;
@@ -273,8 +273,11 @@ function AgentRow({ agent, now }: { agent: LiveAgent; now: number }) {
               </span>
             </div>
           ))}
-          {agent.steps.map((step) => (
-            <div key={`step-${step.stepIndex}`} className="flex items-start gap-1.5 text-[11px] leading-snug">
+          {agent.steps.map((step, i) => (
+            // Key by array position, not stepIndex: an agent that runs across
+            // multiple rounds (v5/v6/v7) resets stepIndex to 0 each call, so
+            // stepIndex alone isn't unique within the accumulated list.
+            <div key={`step-${i}`} className="flex items-start gap-1.5 text-[11px] leading-snug">
               <Brain className="mt-0.5 h-3 w-3 shrink-0 text-stone-400" />
               <span className="min-w-0 text-stone-600">
                 {step.text || (

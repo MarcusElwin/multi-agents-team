@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, type FormEvent } from 'react';
-import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown, Code2 } from 'lucide-react';
+import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown, Code2, Network } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { DEFAULT_MODEL, formatCost, type OpenAIModel } from '@/lib/models';
 import { MODES, type Mode, prettyAgentName } from '@/lib/modes';
@@ -10,11 +10,12 @@ import { ModelSelector } from './components/ModelSelector';
 import { ModeSelector } from './components/ModeSelector';
 import { AgentTimeline, type LiveAgent } from './components/AgentTimeline';
 import { AgentTree, type TreeNode } from './components/AgentTree';
-import { ArchitecturePanel } from './components/ArchitecturePanel';
+import { ArchitectureDrawer } from './components/ArchitecturePanel';
 import { InputRequestCard } from './components/InputRequestCard';
 import { DebugDrawer } from './components/DebugDrawer';
 import { ChatSidebar } from './components/ChatSidebar';
 import { BuildPlan } from './components/BuildPlan';
+import { StrategyView } from './components/StrategyViews';
 import { CodePreview } from './components/CodePreview';
 import { extractCodeBlocks, type CodeBlock } from '@/lib/utils/extract-code';
 import { useConversations, type StoredMessage } from './hooks/useConversations';
@@ -63,6 +64,7 @@ export default function Home() {
   const [live, setLive] = useState<LiveRun>(emptyRun);
   const [liveRunId, setLiveRunId] = useState<string | null>(null);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [archOpen, setArchOpen] = useState(false);
   // Code preview side pane: opened from an agent deliverable's "View code".
   const [preview, setPreview] = useState<{ title: string; blocks: CodeBlock[] } | null>(null);
 
@@ -492,6 +494,20 @@ export default function Home() {
         <div className="flex items-center gap-2">
           <ModelSelector value={model} onChange={setModel} disabled={isLoading} />
           <ModeSelector value={mode} onChange={setMode} disabled={isLoading} />
+          <button
+            type="button"
+            onClick={() => setArchOpen((v) => !v)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+              archOpen
+                ? 'border-stone-900 bg-stone-900 text-white'
+                : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:text-stone-900',
+            )}
+            aria-pressed={archOpen}
+          >
+            <Network className="h-3.5 w-3.5" />
+            Architecture
+          </button>
           <DebugToggle
             open={debugOpen}
             onClick={() => setDebugOpen((v) => !v)}
@@ -529,7 +545,16 @@ export default function Home() {
                 ))}
               </div>
 
-              <ArchitecturePanel mode={mode} collapsible defaultOpen={false} className="mt-10" />
+              <div className="mt-8 text-center">
+                <button
+                  type="button"
+                  onClick={() => setArchOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-stone-500 hover:text-stone-900"
+                >
+                  <Network className="h-3.5 w-3.5" />
+                  How {spec.pattern} works
+                </button>
+              </div>
             </div>
           </div>
         ) : (
@@ -598,6 +623,8 @@ export default function Home() {
         events={live.events}
       />
 
+      <ArchitectureDrawer mode={mode} open={archOpen} onClose={() => setArchOpen(false)} />
+
       <CodePreview
         open={preview !== null}
         title={preview?.title}
@@ -620,8 +647,10 @@ function buildAssistantMessage(
     };
   }
 
-  // v1 and v3 both deliver a single synthesized `result` markdown blob.
-  if (finalEvent.mode === 'v1' || finalEvent.mode === 'v3') {
+  // Every mode except v2 delivers a single synthesized `result` markdown blob
+  // (v1 orchestrated, v3 hierarchical, v4 evaluator-optimizer, v5 debate,
+  // v6 blackboard, v7 market). v2 alone renders as a BuildPlan board.
+  if (finalEvent.mode !== 'v2') {
     return {
       id: crypto.randomUUID(),
       role: 'assistant',
@@ -633,6 +662,7 @@ function buildAssistantMessage(
         iterations: finalEvent.iterations,
         totalCostUsd: finalEvent.totalCostUsd,
         totalTokens: (finalEvent.totalInputTokens ?? 0) + (finalEvent.totalOutputTokens ?? 0),
+        summary: finalEvent.summary,
       },
     };
   }
@@ -779,6 +809,9 @@ function MessageRow({
   // v2 assistant turns render as a BuildPlan board instead of a markdown bubble.
   const isBuildPlan =
     !isUser && message.meta?.mode === 'v2' && (message.meta.perAgent?.length ?? 0) > 0;
+  // v4–v7 attach a pattern-specific summary rendered as a bespoke card.
+  const strategySummary = !isUser ? message.meta?.summary : undefined;
+  const isWide = isBuildPlan || Boolean(strategySummary);
   const isLongReport =
     !isUser && !isBuildPlan && message.content.length > REPORT_COLLAPSE_THRESHOLD;
   // Long reports start collapsed; short ones and user messages always show full.
@@ -804,10 +837,14 @@ function MessageRow({
       </div>
       <div
         className={cn(
-          isBuildPlan ? 'min-w-0 flex-1 space-y-2' : 'max-w-[85%] space-y-2',
+          isWide ? 'min-w-0 flex-1 space-y-2' : 'max-w-[85%] space-y-2',
           isUser && 'flex flex-col items-end'
         )}
       >
+        {/* v4–v7: bespoke summary card (score ladder / debate / blackboard /
+            auction), shown above the synthesized markdown result below. */}
+        {strategySummary && <StrategyView summary={strategySummary} />}
+
         {isBuildPlan ? (
           <BuildPlan
             goal={prevUserMessage}
@@ -868,12 +905,12 @@ function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
           'rounded-full border px-2 py-0.5 font-medium',
           meta.mode === 'v1'
             ? 'border-blue-200 bg-blue-50 text-blue-700'
-            : meta.mode === 'v3'
-              ? 'border-yellow-200 bg-yellow-50 text-yellow-700'
-              : 'border-purple-200 bg-purple-50 text-purple-700'
+            : meta.mode === 'v2'
+              ? 'border-purple-200 bg-purple-50 text-purple-700'
+              : 'border-yellow-200 bg-yellow-50 text-yellow-700'
         )}
       >
-        {meta.mode === 'v1' ? 'orchestrated' : meta.mode === 'v3' ? 'hierarchical' : 'choreographed'}
+        {(MODES[meta.mode] ?? MODES.v1).pattern.toLowerCase()}
       </span>
       {meta.model && (
         <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 font-mono text-stone-600">
@@ -882,7 +919,7 @@ function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
       )}
       {meta.iterations !== undefined && (
         <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-600">
-          {meta.mode === 'v1' ? `${meta.iterations} msgs` : meta.mode === 'v3' ? `${meta.iterations} agents` : `${meta.iterations} iter`}
+          {meta.mode === 'v1' ? `${meta.iterations} msgs` : meta.mode === 'v2' ? `${meta.iterations} iter` : `${meta.iterations} agents`}
         </span>
       )}
       {meta.totalDuration !== undefined && (

@@ -87,7 +87,7 @@ banner) and the server **ignores its own env keys** — every visitor must bring
 their own. This is how the app is hosted publicly without the owner's key being
 spent. Unset locally, the env key works as usual.
 
-## Architecture (v1–v3 illustrated)
+## Architecture (all nine illustrated)
 
 ### v1 — Orchestrated (`lib/agents/` + `lib/orchestrator.ts`)
 
@@ -156,8 +156,142 @@ spent. Unset locally, the env key works as usual.
 Caps: depth **2**, width **4** per node, **15** total nodes. Each parent runs a
 synthesis pass over its children's deliverables.
 
-v4–v9 follow the same shape — an SSE route → a runner that drives the pattern's
-loop → mode-specific `AgentEvent`s. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+### v4 — Evaluator–Optimizer (`lib/evaluator-optimizer-runner.ts`)
+
+```
+                       ┌──────────────────┐
+            user ─────▶│ /api/agents-v4   │  (SSE stream)
+                       └────────┬─────────┘
+                                ▼
+                     ┌────────────────────┐
+                     │     Generator      │ ◀───────────┐
+                     │   writes a draft   │             │ revise with
+                     └─────────┬──────────┘             │ the critic's
+                               ▼                        │ issues
+                     ┌────────────────────┐             │
+                     │      Critic        │ ── issues ──┘
+                     │  scores 0–10       │
+                     └─────────┬──────────┘
+                               ▼
+                   score ≥ 8  ?  ──▶ done   (else loop, up to 4 rounds)
+```
+
+Pass bar: score **≥ 8**, max **4** rounds (keeps the best draft if never passed).
+
+### v5 — Debate (`lib/debate-runner.ts`)
+
+```
+                       ┌──────────────────┐
+            user ─────▶│ /api/agents-v5   │  (SSE stream)
+                       └────────┬─────────┘
+                                ▼
+              ┌─────────────┐       ┌─────────────┐
+              │ Affirmative │ ◀──▶  │  Opposing   │   3 rounds of argument
+              └──────┬──────┘       └──────┬──────┘
+                     └───────────┬─────────┘
+                                 ▼
+                          ┌─────────────┐
+                          │    Judge    │  picks a winner + synthesizes
+                          └─────────────┘
+```
+
+Two debaters argue opposing stances for **3** rounds; a judge rules and synthesizes.
+
+### v6 — Blackboard (`lib/blackboard-runner.ts`)
+
+```
+                       ┌──────────────────┐
+            user ─────▶│ /api/agents-v6   │  (SSE stream)
+                       └────────┬─────────┘
+                                ▼
+                   ┌──────────────────────────┐
+                   │   Controller (each round)│  picks who acts next
+                   └────────────┬─────────────┘
+              ┌─────────────────┼─────────────────┐
+              ▼                 ▼                 ▼
+        ┌──────────┐      ┌──────────┐      ┌──────────┐
+        │ analyst  │      │ planner  │      │  critic  │
+        └────┬─────┘      └────┬─────┘      └────┬─────┘
+             └─────────────────┼─────────────────┘
+                               ▼
+                  ┌──────────────────────────┐
+                  │   shared blackboard       │  named sections, read/write
+                  └──────────────────────────┘
+```
+
+A content-driven controller picks one role per round; agents read/write named
+sections of a shared board until a `solution` settles, or **8** rounds.
+
+### v7 — Market (`lib/market-runner.ts`)
+
+```
+                       ┌──────────────────┐
+            user ─────▶│ /api/agents-v7   │  (SSE stream)
+                       └────────┬─────────┘
+                                ▼
+                     ┌────────────────────┐
+                     │  post tasks to the │
+                     │   auction board    │
+                     └─────────┬──────────┘
+                               ▼  agents bid (fit 0–1, est. $)
+        ┌────────────┬─────────────┬────────────┐
+        ▼            ▼             ▼            ▼
+   ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐
+   │researcher│ │ engineer │ │ designer │ │ analyst │
+   └─────────┘ └──────────┘ └──────────┘ └─────────┘
+        └────────────┴──────┬──────┴────────────┘
+                            ▼
+              award each task to its best bid  (≤ 2 tasks per agent)
+```
+
+Tasks are auctioned to a roster of four; the highest-fit bid wins each, greedily,
+with a per-agent bundle cap of **2**.
+
+### v8 — Self-Consistency (`lib/self-consistency-runner.ts`)
+
+```
+                       ┌──────────────────┐
+            user ─────▶│ /api/agents-v8   │  (SSE stream)
+                       └────────┬─────────┘
+                                ▼  same prompt, N parallel samples
+        ┌────────────┬─────────────┬────────────┐
+        ▼            ▼             ▼            ▼
+   ┌─────────┐  ┌─────────┐   ┌─────────┐  ┌─────────┐
+   │sample 1 │  │sample 2 │   │sample 3 │  │sample 4 │   (run in parallel)
+   └────┬────┘  └────┬────┘   └────┬────┘  └────┬────┘
+        └────────────┴──────┬──────┴────────────┘
+                            ▼
+                    ┌───────────────┐
+                    │     Judge     │  selects or merges the best
+                    └───────────────┘
+```
+
+Draws **4** independent samples in parallel; a judge selects the best or merges
+them into a consensus.
+
+### v9 — Swarm (`lib/swarm-runner.ts`)
+
+```
+                       ┌──────────────────┐
+            user ─────▶│ /api/agents-v9   │  (SSE stream)
+                       └────────┬─────────┘
+                                ▼  N identical agents act every round
+        ┌────────────┬─────────────┬────────────┐
+        ▼            ▼             ▼            ▼
+   ┌────────┐   ┌────────┐    ┌────────┐   ┌────────┐
+   │ agent  │   │ agent  │    │ agent  │   │ agent  │   (no roles, no controller)
+   └───┬────┘   └───┬────┘    └───┬────┘   └───┬────┘
+       └────────────┴──────┬──────┴────────────┘
+                           ▼
+              ┌──────────────────────────┐
+              │   shared scratchpad        │  each leaves a trace; next round
+              └──────────────────────────┘  builds on it  (3 rounds)
+```
+
+**4** identical agents build on a shared scratchpad over **3** rounds — pure
+stigmergy: no roles, no controller, no direct messaging.
+
+For the full comparison and trade-offs see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 and each `/architectures/[mode]` page.
 
 ## Features

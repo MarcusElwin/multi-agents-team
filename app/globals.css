@@ -19,6 +19,13 @@
   }
 }
 
+/* Never allow accidental horizontal scroll on mobile (clip, not hidden, so
+   sticky/fixed positioning still works). */
+html,
+body {
+  overflow-x: clip;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

@@ -39,8 +39,8 @@ export default async function Landing() {
           </span>
           <span className="text-sm font-semibold">Multi-Agent Team</span>
         </div>
-        <div className="flex items-center gap-3">
-          <Link href="/references" className="hidden text-sm text-stone-500 hover:text-stone-900 sm:inline">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Link href="/references" className="text-sm text-stone-500 hover:text-stone-900">
             References
           </Link>
           <a
@@ -48,8 +48,9 @@ export default async function Landing() {
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-sm text-stone-600 hover:border-stone-300 hover:text-stone-900"
+            aria-label="GitHub"
           >
-            <Code2 className="h-4 w-4" /> GitHub
+            <Code2 className="h-4 w-4" /> <span className="hidden sm:inline">GitHub</span>
             {stats && (stats.stars > 0 || stats.forks > 0) && (
               <span className="flex items-center gap-2 border-l border-stone-200 pl-2 text-stone-500">
                 {stats.stars > 0 && (

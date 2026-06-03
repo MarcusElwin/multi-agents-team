@@ -111,6 +111,15 @@ export default async function Landing() {
         )}
       </section>
 
+      {/* How it works — animated flow (leads, before the About text) */}
+      <section className="mx-auto max-w-5xl px-6 pb-14">
+        <h2 className="mb-2 text-center text-2xl font-semibold tracking-tight">How a team handles one request</h2>
+        <p className="mb-6 text-center text-sm text-stone-500">
+          A coordinator plans, delegates to specialists, and synthesizes the result — live.
+        </p>
+        <AgentFlow />
+      </section>
+
       {/* About */}
       <section id="about" className="mx-auto max-w-3xl px-6 pb-12">
         <div className="rounded-2xl border border-stone-200 bg-white p-6 sm:p-8">
@@ -157,15 +166,6 @@ export default async function Landing() {
             </div>
           </div>
         </div>
-      </section>
-
-      {/* How it works — animated flow */}
-      <section className="mx-auto max-w-5xl px-6 pb-16">
-        <h2 className="mb-2 text-center text-2xl font-semibold tracking-tight">How a team handles one request</h2>
-        <p className="mb-6 text-center text-sm text-stone-500">
-          A coordinator plans, delegates to specialists, and synthesizes the result — live.
-        </p>
-        <AgentFlow />
       </section>
 
       {/* Patterns */}

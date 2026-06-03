@@ -1,14 +1,15 @@
 import { tool, generateText } from "ai";
-import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
+import { provider, webSearchAvailable } from "../provider";
 import type { AgentHooks } from "../agent-events";
 import * as log from "../logger";
 
 /**
- * A reusable OpenAI web-search tool. v1's researcher has its own two-step
- * (search + structure) variant; this is the lean version for any agent that
- * just needs real, sourced web results (e.g. v3 research sub-agents).
+ * A reusable web-search tool. It uses OpenAI's web search (Responses API), so
+ * it's only available when the active run provider is OpenAI. Under a non-OpenAI
+ * provider (e.g. Anthropic, BYO key), it degrades gracefully — the model
+ * proceeds on general knowledge rather than crashing the run.
  *
  * Emits the same onWebSearch hook events as v1 so the UI/debug stream and the
  * timeline show search activity uniformly across modes.
@@ -25,16 +26,25 @@ export function makeWebSearchTool(model: OpenAIModel = DEFAULT_MODEL, hooks: Age
         .describe('What to extract, e.g. "recent statistics", "best practices", "comparison".'),
     }),
     execute: async ({ query, extractionGoal }) => {
+      // Web search is OpenAI-only; skip cleanly under other providers.
+      if (!webSearchAvailable()) {
+        return {
+          success: false,
+          findings: `Web search isn't available with the current model provider. Proceed using general knowledge for "${query}".`,
+          sources: "",
+        };
+      }
       log.detail("🔍 search", query);
       hooks.onWebSearch?.({ status: "start", query });
       const spin = log.spinner(
         `searching the web: "${query.slice(0, 50)}${query.length > 50 ? "…" : ""}"`,
       );
       try {
+        const p = provider();
         const { text, sources } = await generateText({
-          model: openai.responses(model),
+          model: p.responses!(model) as Parameters<typeof generateText>[0]["model"],
           prompt: `${query}\n\nFocus on: ${extractionGoal}`,
-          tools: { web_search: openai.tools.webSearch({}) },
+          tools: { web_search: p.tools!.webSearch({}) as never },
         });
         const n = sources?.length ?? 0;
         spin.succeed(`found ${n} source${n === 1 ? "" : "s"} · ${text.length} chars`);

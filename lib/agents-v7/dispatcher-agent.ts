@@ -1,5 +1,5 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { provider } from "../provider";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 import { type AgentHooks } from "../agent-events";
@@ -47,7 +47,7 @@ export function createDispatcherAgent(model: OpenAIModel = DEFAULT_MODEL, hooks:
     "- Call postTasks exactly once with the full task list, then stop.";
 
   return new Agent({
-    model: openai(model),
+    model: provider()(model),
     system,
     stopWhen: stepCountIs(3),
     onStepFinish: makeStepHook(hooks),

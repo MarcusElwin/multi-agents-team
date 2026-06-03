@@ -1,5 +1,5 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { provider } from "../provider";
 import { MessageBus } from "../message-bus";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
@@ -8,7 +8,7 @@ import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 // Inbox reads go through bus.getInbox('backendAgent', ...).
 export function createBackendAgent(model: OpenAIModel = DEFAULT_MODEL, bus: MessageBus = new MessageBus()) {
     return new Agent({
-    model: openai(model),
+    model: provider()(model),
     system: `You are the Backend Agent - an expert in backend development and API design.
 
     ITERATIVE WORKFLOW:

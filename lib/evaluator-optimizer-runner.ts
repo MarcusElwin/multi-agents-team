@@ -1,5 +1,6 @@
 import { Conversation } from "./conversation";
-import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel } from "./models";
+import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel, type ProviderId } from "./models";
+import { withProvider } from "./provider";
 import type { AgentEvent, EventSink } from "./agent-events";
 import { createGeneratorAgent } from "./agents-v4/generator-agent";
 import { createCriticAgent } from "./agents-v4/critic-agent";
@@ -48,6 +49,8 @@ export interface EvaluatorOptimizerResult {
 
 export interface EvaluatorOptimizerOptions {
   model?: OpenAIModel;
+  apiKey?: string;
+  providerId?: ProviderId;
 }
 
 /** Walk an agent result's tool outputs, calling `fn` for each value object. */
@@ -79,6 +82,8 @@ function readUsage(result: AgentResult) {
  */
 export class EvaluatorOptimizerRunner {
   private model: OpenAIModel;
+  private apiKey?: string;
+  private providerId: ProviderId;
   private emit: EventSink = () => {};
   private iterations = 0;
   private totalIn = 0;
@@ -87,6 +92,8 @@ export class EvaluatorOptimizerRunner {
 
   constructor(options: EvaluatorOptimizerOptions = {}) {
     this.model = options.model ?? DEFAULT_MODEL;
+    this.apiKey = options.apiKey;
+    this.providerId = options.providerId ?? 'openai';
   }
 
   async run(
@@ -94,6 +101,7 @@ export class EvaluatorOptimizerRunner {
     _conversation: Conversation = new Conversation(),
     onEvent?: EventSink,
   ): Promise<EvaluatorOptimizerResult> {
+    return withProvider({ providerId: this.providerId, apiKey: this.apiKey }, async () => {
     this.emit = onEvent ?? (() => {});
     this.iterations = 0;
     this.totalIn = 0;
@@ -210,6 +218,7 @@ export class EvaluatorOptimizerRunner {
       totalOutputTokens: this.totalOut,
       totalCostUsd: this.totalCost,
     };
+    });
   }
 
   /** Run the generator for one round; returns the submitted draft (or text). */

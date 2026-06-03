@@ -1,5 +1,5 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { provider } from "../provider";
 import { MessageBus } from "../message-bus";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
@@ -8,7 +8,7 @@ import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 // Inbox reads go through bus.getInbox('frontendAgent', ...).
 export function createFrontendAgent(model: OpenAIModel = DEFAULT_MODEL, bus: MessageBus = new MessageBus()) {
     return new Agent({
-    model: openai(model),
+    model: provider()(model),
     system: `You are the Frontend Agent - an expert in frontend development and visual design.
 
     ITERATIVE WORKFLOW:

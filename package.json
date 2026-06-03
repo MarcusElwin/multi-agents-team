@@ -11,6 +11,7 @@
     "test:runner": "tsx scripts/test-runner.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.81",
     "@ai-sdk/openai": "^2.0.67",
     "@ai-sdk/react": "^2.0.93",
     "ai": "^5.0.93",

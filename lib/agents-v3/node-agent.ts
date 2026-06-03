@@ -1,5 +1,5 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { provider } from "../provider";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 import { type AgentHooks } from "../agent-events";
@@ -97,7 +97,7 @@ export function createNodeAgent(opts: {
     `- Always end by calling finalize exactly once with your deliverable.`;
 
   const common = {
-    model: openai(model),
+    model: provider()(model),
     system: baseSystem,
     stopWhen: stepCountIs(canSpawn ? maxChildren + 4 : 5),
     onStepFinish: makeStepHook(hooks),

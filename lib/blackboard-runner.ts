@@ -1,5 +1,6 @@
 import { Conversation } from "./conversation";
-import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel } from "./models";
+import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel, type ProviderId } from "./models";
+import { withProvider } from "./provider";
 import type { AgentEvent, EventSink } from "./agent-events";
 import { createContributorAgent } from "./agents-v6/contributor-agent";
 import * as log from "./logger";
@@ -55,6 +56,8 @@ export interface BlackboardResult {
 
 export interface BlackboardOptions {
   model?: OpenAIModel;
+  apiKey?: string;
+  providerId?: ProviderId;
 }
 
 /** Render the whole board as text for injection into a contributor prompt. */
@@ -116,6 +119,8 @@ function readUsage(result: AgentResult) {
  */
 export class BlackboardRunner {
   private model: OpenAIModel;
+  private apiKey?: string;
+  private providerId: ProviderId;
   private emit: EventSink = () => {};
   private totalIn = 0;
   private totalOut = 0;
@@ -123,6 +128,8 @@ export class BlackboardRunner {
 
   constructor(options: BlackboardOptions = {}) {
     this.model = options.model ?? DEFAULT_MODEL;
+    this.apiKey = options.apiKey;
+    this.providerId = options.providerId ?? 'openai';
   }
 
   /** Heuristic controller: pick the role that has contributed least so far. */
@@ -139,6 +146,7 @@ export class BlackboardRunner {
     conversation: Conversation = new Conversation(),
     onEvent?: EventSink,
   ): Promise<BlackboardResult> {
+    return withProvider({ providerId: this.providerId, apiKey: this.apiKey }, async () => {
     this.emit = onEvent ?? (() => {});
     this.totalIn = 0;
     this.totalOut = 0;
@@ -250,6 +258,7 @@ export class BlackboardRunner {
       totalOutputTokens: this.totalOut,
       totalCostUsd: this.totalCost,
     };
+    });
   }
 
   /** Extract the writeSection contribution from a contributor's result. */

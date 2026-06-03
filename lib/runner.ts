@@ -10,7 +10,8 @@ import { createFrontendAgent } from './agents-v2/frontend';
 import { createDesignAgent } from './agents-v2/design';
 import { MessageBus, Message } from './message-bus';
 import { Conversation } from './conversation';
-import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel } from './models';
+import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel, type ProviderId } from './models';
+import { withProvider } from './provider';
 import type { EventSink } from './agent-events';
 import * as log from './logger';
 import chalk from 'chalk';
@@ -63,14 +64,20 @@ interface RunnerSummary {
 
 export interface RunnerOptions {
     model?: OpenAIModel;
+    apiKey?: string;
+    providerId?: ProviderId;
 }
 
 export class AgentRunner {
     private model: OpenAIModel;
+    private apiKey?: string;
+    private providerId: ProviderId;
     private maxIterations = 10;
 
     constructor(options: RunnerOptions = {}) {
         this.model = options.model ?? DEFAULT_MODEL;
+        this.apiKey = options.apiKey;
+        this.providerId = options.providerId ?? 'openai';
         log.debug(`Agent Runner initialized · model=${this.model}`);
     }
 
@@ -84,6 +91,7 @@ export class AgentRunner {
         conversation: Conversation = new Conversation(),
         onEvent?: EventSink,
     ): Promise<RunnerSummary> {
+        return withProvider({ providerId: this.providerId, apiKey: this.apiKey }, async () => {
         log.box('🚀 v2 Choreographed Workflow', 'magenta');
         log.kv({ Query: `"${userQuery.slice(0, 80)}${userQuery.length > 80 ? '…' : ''}"` });
 
@@ -290,6 +298,7 @@ export class AgentRunner {
         } finally {
             bus.off('message', busListener);
         }
+        });
     }
 
     /**

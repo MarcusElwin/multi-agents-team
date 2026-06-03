@@ -4,7 +4,8 @@ import {
 import { MessageBus, type Message } from './message-bus';
 import { Conversation } from './conversation';
 import { waitForInput } from './input-registry';
-import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel } from './models';
+import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel, type ProviderId } from './models';
+import { withProvider } from './provider';
 import type { AgentHooks, EventSink } from './agent-events';
 import * as log from './logger';
 
@@ -97,11 +98,15 @@ interface Handoff {
 
 export interface OrchestratorOptions {
     model?: OpenAIModel;
+    apiKey?: string;
+    providerId?: ProviderId;
 }
 
 export class AgentOrchestrator {
     private currentAgent: AgentType = 'coordinator';
     private readonly model: OpenAIModel;
+    private apiKey?: string;
+    private providerId: ProviderId;
     // Built per-run by buildAgents(), since hooks close over the current run's
     // EventSink and read currentAgent/iteration to attribute live events.
     private agents!: Record<AgentType, { generate(opts: { prompt: string }): Promise<AgentResult> }>;
@@ -116,6 +121,8 @@ export class AgentOrchestrator {
 
     constructor(options: OrchestratorOptions = {}) {
         this.model = options.model ?? DEFAULT_MODEL;
+        this.apiKey = options.apiKey;
+        this.providerId = options.providerId ?? 'openai';
         log.debug(`Agent Orchestrator initialized (model: ${this.model})`);
     }
 
@@ -165,6 +172,7 @@ export class AgentOrchestrator {
         onEvent?: EventSink,
         conversation: Conversation = new Conversation(),
     ): Promise<string> {
+        return withProvider({ providerId: this.providerId, apiKey: this.apiKey }, async () => {
         log.box('🚀 v1 Orchestrated Workflow', 'cyan');
         log.kv({ User: `"${userMessage.slice(0, 80)}${userMessage.length > 80 ? '…' : ''}"` });
 
@@ -443,6 +451,7 @@ export class AgentOrchestrator {
         } finally {
             this.bus.off('message', busListener);
         }
+        });
     }
 
     /**

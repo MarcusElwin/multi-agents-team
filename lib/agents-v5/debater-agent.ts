@@ -1,5 +1,5 @@
 import { Experimental_Agent as Agent, stepCountIs, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { provider } from "../provider";
 import { z } from "zod";
 import { type OpenAIModel } from "../models";
 import { type AgentHooks } from "../agent-events";
@@ -35,7 +35,7 @@ export function createDebaterAgent(model: OpenAIModel, hooks: AgentHooks, stance
     `- Always end by calling argue exactly once with your argument for this round.`;
 
   return new Agent({
-    model: openai(model),
+    model: provider()(model),
     system,
     tools: { argue },
     stopWhen: stepCountIs(3),

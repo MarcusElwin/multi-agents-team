@@ -37,6 +37,10 @@ export interface ModeSpec {
   whenToUse: string;
   /** The main trade-off / cost of this pattern. */
   tradeoff: string;
+  /** Further-reading links for this pattern (optional). */
+  references?: { label: string; url: string }[];
+  /** A short author's note / field observation (optional). */
+  note?: string;
 }
 
 export const MODES: Record<Mode, ModeSpec> = {
@@ -70,6 +74,11 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'Linear content pipelines where the steps and their order are clear up front.',
     tradeoff: 'A single coordinator is a bottleneck and a single point of failure; no parallelism.',
+    references: [
+      { label: 'Anthropic — Building effective agents (Orchestrator-workers)', url: 'https://www.anthropic.com/research/building-effective-agents' },
+      { label: 'OpenAI — A practical guide to building agents', url: 'https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf' },
+    ],
+    note: 'The workhorse pattern. A strong coordinator + cheap specialists is reliable and easy to debug — but the coordinator is a bottleneck, so keep its turns short and its delegation explicit.',
   },
   v2: {
     value: 'v2',
@@ -102,6 +111,11 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'Cross-functional design tasks where peers must negotiate a shared artifact.',
     tradeoff: 'Peer negotiation can loop or stall; harder to guarantee convergence than a coordinator.',
+    references: [
+      { label: 'Anthropic — Building effective agents', url: 'https://www.anthropic.com/research/building-effective-agents' },
+      { label: 'Microsoft AutoGen — multi-agent conversation', url: 'https://microsoft.github.io/autogen/' },
+    ],
+    note: 'Peers negotiating directly can produce richer cross-functional output, but convergence isn’t guaranteed — feed each agent its inbox and give clear "done" criteria or it loops.',
   },
   v3: {
     value: 'v3',
@@ -131,6 +145,11 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'Open-ended tasks that naturally break into nested, independent subtasks.',
     tradeoff: 'Emergent tree shape is less predictable; recursive spawning + synthesis costs more tokens.',
+    references: [
+      { label: 'Anthropic — Orchestrator-workers & subagents', url: 'https://www.anthropic.com/research/building-effective-agents' },
+      { label: 'Anthropic — How we built our multi-agent research system', url: 'https://www.anthropic.com/engineering/built-multi-agent-research-system' },
+    ],
+    note: 'Recursive decomposition shines on open-ended work, but the tree shape is emergent — cap depth/width and watch cost, since every parent adds a synthesis pass.',
   },
   v4: {
     value: 'v4',
@@ -160,6 +179,11 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'A single artifact you want iteratively improved to a quality bar — a draft, spec, or snippet.',
     tradeoff: 'Cost grows with each round; a never-satisfied critic can burn the full round budget.',
+    references: [
+      { label: 'Anthropic — Building effective agents (Evaluator-optimizer)', url: 'https://www.anthropic.com/research/building-effective-agents' },
+      { label: 'Reflexion: language agents with verbal reinforcement learning', url: 'https://arxiv.org/abs/2303.11366' },
+    ],
+    note: 'A demanding critic + a concrete rubric is the whole game. Vague rubrics give vague gains; specific, actionable issues drive real improvement round over round.',
   },
   v5: {
     value: 'v5',
@@ -190,6 +214,11 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'Decisions and trade-offs where the strongest case for each side should be heard first.',
     tradeoff: 'Adds rounds of argument before any answer; the verdict quality depends on the judge.',
+    references: [
+      { label: 'Improving factuality and reasoning via multiagent debate', url: 'https://arxiv.org/abs/2305.14325' },
+      { label: 'AI safety via debate', url: 'https://arxiv.org/abs/1805.00899' },
+    ],
+    note: 'Great for surfacing the strongest case on each side of a decision. The judge matters as much as the debaters — a weak judge just averages, a good one weighs.',
   },
   v6: {
     value: 'v6',
@@ -220,6 +249,11 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'Problems whose answer assembles from many partial contributions converging on a shared artifact.',
     tradeoff: 'Controller selection can loop; no direct peer messaging means coordination is slower.',
+    references: [
+      { label: 'Exploring LLM multi-agent systems based on blackboard architecture', url: 'https://arxiv.org/abs/2507.01701' },
+      { label: 'LLM-based multi-agent blackboard system', url: 'https://arxiv.org/abs/2510.01285' },
+    ],
+    note: 'Content-driven control (who acts next depends on the board state) is the differentiator. It’s powerful for shared-intelligence problems but slower than direct messaging.',
   },
   v7: {
     value: 'v7',
@@ -252,6 +286,11 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     whenToUse: 'Heterogeneous work where the best agent for each task is not obvious up front.',
     tradeoff: 'The bid round is extra LLM calls; only worth it for larger, varied agent pools.',
+    references: [
+      { label: 'The 5th orchestration pattern: market-based task allocation', url: 'https://dev.to/slythefox/the-5th-agent-orchestration-pattern-market-based-task-allocation-db0' },
+      { label: 'Consensus-Based Bundle Algorithm (CBBA)', url: 'https://acl.mit.edu/papers/HowTAC2009.pdf' },
+    ],
+    note: 'Competitive bidding spreads work to the best-fit agent and makes cost visible, but the bid round is extra calls — it pays off mainly with larger, heterogeneous agent pools.',
   },
 };
 

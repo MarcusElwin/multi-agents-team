@@ -42,8 +42,8 @@ export function ModeSelector({
           disabled && 'cursor-not-allowed opacity-50'
         )}
       >
-        <CurrentIcon className="h-3.5 w-3.5 text-stone-500" />
-        <span>{current.label}</span>
+        <CurrentIcon className="h-3.5 w-3.5 shrink-0 text-stone-500" />
+        <span className="hidden sm:inline">{current.label}</span>
         <ChevronDown
           className={cn('h-3.5 w-3.5 text-stone-400 transition-transform', open && 'rotate-180')}
         />
@@ -52,7 +52,7 @@ export function ModeSelector({
       {open && (
         <div
           role="listbox"
-          className="absolute right-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-xl border border-stone-200 bg-white py-1 shadow-lg"
+          className="absolute right-0 top-full z-50 mt-1 max-h-[min(70vh,24rem)] w-[min(18rem,calc(100vw-1.5rem))] overflow-y-auto overscroll-contain rounded-xl border border-stone-200 bg-white py-1 shadow-lg [scrollbar-width:thin]"
         >
           <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-stone-400">
             Agentic system

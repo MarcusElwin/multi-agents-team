@@ -7,11 +7,11 @@ These are **placeholders**. To add real screenshots:
    `landing.png` then update `../../README.md` to point at `landing.png`
    (or just overwrite `landing.svg` if you export SVG).
 
-| File | What to capture |
-| --- | --- |
-| `landing.svg` | The landing page at `/` (hero + architecture cards). |
-| `chat.svg` | A run in progress at `/chat` — the agent timeline + cost readout. |
-| `architecture.svg` | An architecture detail page, e.g. `/architectures/v3`. |
-| `settings.svg` | The Settings drawer with the four provider key fields. |
+| File | What to capture | Status |
+| --- | --- | --- |
+| `landing.png` | The landing page at `/` (hero + architecture cards). | ✅ added |
+| `chat.png` | The chat app at `/chat` (welcome state / a run in progress). | ✅ added |
+| `settings.png` | The Settings drawer with the four provider key fields. | ✅ added |
+| `architecture.svg` | An architecture detail page, e.g. `/architectures/v3`. | ⏳ placeholder |
 
 The README references these by relative path, so GitHub renders them inline.

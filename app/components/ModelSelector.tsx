@@ -47,7 +47,7 @@ export function ModelSelector({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-stone-200 bg-white py-1 shadow-lg [scrollbar-width:thin]">
+        <div className="absolute left-0 top-full z-50 mt-1 max-h-[min(70vh,24rem)] w-[min(16rem,calc(100vw-1.5rem))] overflow-y-auto overscroll-contain rounded-xl border border-stone-200 bg-white py-1 shadow-lg [scrollbar-width:thin]">
           {PROVIDER_LIST.map((p) => {
             const models = MODEL_OPTIONS.filter((m) => m.provider === p.id);
             if (models.length === 0) return null;

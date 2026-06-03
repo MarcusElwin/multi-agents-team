@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight, Code2, KeyRound, Sparkles, Star, GitFork } from 'lucide-react';
 import { ArchitectureCards } from './components/ArchitectureCards';
+import { AgentFlow } from './components/AgentFlow';
 
 export const metadata = {
   title: 'Multi-Agent Team — nine ways to coordinate LLM agents',
@@ -40,7 +41,10 @@ export default async function Landing() {
           <span className="text-sm font-semibold">Multi-Agent Team</span>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          <Link href="/references" className="text-sm text-stone-500 hover:text-stone-900">
+          <Link href="/about" className="hidden text-sm text-stone-500 hover:text-stone-900 sm:inline">
+            About
+          </Link>
+          <Link href="/references" className="hidden text-sm text-stone-500 hover:text-stone-900 sm:inline">
             References
           </Link>
           <a
@@ -110,52 +114,13 @@ export default async function Landing() {
         )}
       </section>
 
-      {/* About */}
-      <section id="about" className="mx-auto max-w-3xl px-6 pb-12">
-        <div className="rounded-2xl border border-stone-200 bg-white p-6 sm:p-8">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-stone-400">About</h2>
-          <p className="mt-3 leading-relaxed text-stone-600">
-            “Multi-agent” gets used as one word, but there are many distinct ways to coordinate
-            agents — and they behave very differently. This is a place to <em>feel</em> the
-            differences: run the same task through each architecture, watch the live agent timeline,
-            inspect every tool call and message in the debug stream, and compare cost. It’s a
-            teaching tool and a reference implementation in one.
-          </p>
-          <p className="mt-4 leading-relaxed text-stone-600">
-            Agentic AI moves fast — new patterns, frameworks, and papers land every week. The goal
-            here is a <strong>living reference</strong>: a single place to learn the coordination
-            patterns by running them, with the research and source for each one a click away.
-          </p>
-          <div className="mt-5 rounded-xl border border-stone-200 bg-stone-50/60 p-4">
-            <p className="text-sm leading-relaxed text-stone-600">
-              <strong className="text-stone-800">Contributions welcome.</strong> Know a pattern,
-              paper, or framework that belongs here? Add it — open a PR with a new architecture or a
-              reference, or file an issue. The patterns are data-driven, so adding one is mostly a
-              new runner + a mode entry.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-3 text-sm">
-              <a
-                href={`${REPO_URL}/blob/main/CONTRIBUTING.md`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-full bg-stone-900 px-4 py-1.5 font-medium text-white hover:bg-stone-800"
-              >
-                <Code2 className="h-3.5 w-3.5" /> Contribute
-              </a>
-              <a
-                href={`${REPO_URL}/issues`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 px-4 py-1.5 text-stone-700 hover:border-stone-300"
-              >
-                Open issues
-              </a>
-              <Link href="/references" className="inline-flex items-center gap-1.5 px-2 py-1.5 text-stone-500 hover:text-stone-900">
-                Reading list →
-              </Link>
-            </div>
-          </div>
-        </div>
+      {/* How it works — animated flow (leads, before the About text) */}
+      <section className="mx-auto max-w-5xl px-6 pb-14">
+        <h2 className="mb-2 text-center text-2xl font-semibold tracking-tight">How a team handles one request</h2>
+        <p className="mb-6 text-center text-sm text-stone-500">
+          The same job, coordinated four different ways. Pick a pattern — or watch them cycle.
+        </p>
+        <AgentFlow />
       </section>
 
       {/* Patterns */}
@@ -183,7 +148,7 @@ export default async function Landing() {
       <footer className="border-t border-stone-200 py-8 text-center text-xs text-stone-400">
         Made with <span className="text-red-400">♥</span> in Stockholm by{' '}
         <a
-          href="https://umaitech.com"
+          href="https://umai-tech.com"
           target="_blank"
           rel="noopener noreferrer"
           className="font-medium text-stone-500 underline-offset-2 hover:text-stone-900 hover:underline"

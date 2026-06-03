@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Multi-Agent Team",
-  description: "Chat with orchestrated and choreographed AI agent teams",
+  description: "Nine multi-agent AI coordination patterns on the Vercel AI SDK — bring your own key.",
 };
 
 export default function RootLayout({

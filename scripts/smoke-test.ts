@@ -15,6 +15,7 @@ import { runSelfConsistency } from '../lib/self-consistency-runner';
 import { runSwarm } from '../lib/swarm-runner';
 import { Conversation } from '../lib/conversation';
 import type { AgentEvent } from '../lib/agent-events';
+import { providerForModel, type ProviderId } from '../lib/models';
 
 /**
  * Fast end-to-end smoke test: run a tiny prompt through every mode (v1–v7) and
@@ -32,7 +33,7 @@ const PROMPT = 'Reply with a single short sentence about teamwork.';
 
 type Runner = (
   message: string,
-  options: { model?: string },
+  options: { model?: string; providerId?: ProviderId },
   onEvent?: (e: AgentEvent) => void,
   conversation?: Conversation,
 ) => Promise<unknown>;
@@ -60,7 +61,9 @@ async function runMode(name: string): Promise<{ name: string; ok: boolean; detai
   };
   const start = Date.now();
   try {
-    await MODES[name](PROMPT, { model: MODEL }, onEvent, new Conversation());
+    // Derive the provider from the model so non-OpenAI models run under the
+    // right provider context (mirrors what the API routes do via resolveCredentials).
+    await MODES[name](PROMPT, { model: MODEL, providerId: providerForModel(MODEL) }, onEvent, new Conversation());
   } catch (err) {
     errored = err instanceof Error ? err.message : String(err);
   }

@@ -31,6 +31,12 @@ export interface ModeSpec {
   suggestions: string[];
   /** Rough expected duration, shown as a hint. */
   durationHint: string;
+  /** Ordered "how it works" steps, for the architecture panel. */
+  howItWorks: string[];
+  /** When this pattern is the right choice. */
+  whenToUse: string;
+  /** The main trade-off / cost of this pattern. */
+  tradeoff: string;
 }
 
 export const MODES: Record<Mode, ModeSpec> = {
@@ -56,6 +62,14 @@ export const MODES: Record<Mode, ModeSpec> = {
       'Summarize the state of open-source LLM frameworks',
     ],
     durationHint: '~30–90s',
+    howItWorks: [
+      'A coordinator analyzes the request and plans an ordered workflow.',
+      'It delegates to one specialist at a time (researcher → writer → editor), passing context forward.',
+      'Each specialist does its work and returns to the coordinator.',
+      'The coordinator synthesizes the results into a final answer.',
+    ],
+    whenToUse: 'Linear content pipelines where the steps and their order are clear up front.',
+    tradeoff: 'A single coordinator is a bottleneck and a single point of failure; no parallelism.',
   },
   v2: {
     value: 'v2',
@@ -80,6 +94,14 @@ export const MODES: Record<Mode, ModeSpec> = {
       'Design a Kanban board with draggable cards, columns, and a card detail drawer',
     ],
     durationHint: 'up to ~5 min',
+    howItWorks: [
+      'Backend, frontend, and design agents start with the same brief.',
+      'They message each other directly over a shared per-conversation bus — no central coordinator.',
+      'Each reads its inbox, refines its part against peers’ feedback, and re-shares.',
+      'Each marks itself complete; the run ends when all three are done.',
+    ],
+    whenToUse: 'Cross-functional design tasks where peers must negotiate a shared artifact.',
+    tradeoff: 'Peer negotiation can loop or stall; harder to guarantee convergence than a coordinator.',
   },
   v3: {
     value: 'v3',
@@ -101,6 +123,14 @@ export const MODES: Record<Mode, ModeSpec> = {
       'Design a URL shortener: split into API design, storage, and a self-contained React stats UI',
     ],
     durationHint: 'up to ~5 min',
+    howItWorks: [
+      'A lead agent decomposes the task into sub-tasks at runtime.',
+      'It spawns a sub-agent per part; sub-agents can spawn their own children (depth-capped).',
+      'Sibling children run in parallel; research-y leaves get a real web-search tool.',
+      'Each parent synthesizes its children’s deliverables up to a final answer.',
+    ],
+    whenToUse: 'Open-ended tasks that naturally break into nested, independent subtasks.',
+    tradeoff: 'Emergent tree shape is less predictable; recursive spawning + synthesis costs more tokens.',
   },
   v4: {
     value: 'v4',
@@ -122,6 +152,14 @@ export const MODES: Record<Mode, ModeSpec> = {
       'Produce a tight executive summary of the state of agentic commerce',
     ],
     durationHint: 'up to ~3 min',
+    howItWorks: [
+      'A generator produces a first draft of the deliverable.',
+      'A critic scores it 0–10 against a rubric and lists concrete issues.',
+      'The generator revises, addressing each issue.',
+      'The loop repeats until the critic passes (score ≥ 8) or a max-rounds cap.',
+    ],
+    whenToUse: 'A single artifact you want iteratively improved to a quality bar — a draft, spec, or snippet.',
+    tradeoff: 'Cost grows with each round; a never-satisfied critic can burn the full round budget.',
   },
   v5: {
     value: 'v5',
@@ -144,6 +182,14 @@ export const MODES: Record<Mode, ModeSpec> = {
       'Should we adopt an agent framework or build our own harness?',
     ],
     durationHint: 'up to ~3 min',
+    howItWorks: [
+      'Two debaters are assigned opposing positions on the question.',
+      'They argue across several rounds, each directly rebutting the other’s last point.',
+      'A judge reads the full transcript.',
+      'The judge picks the stronger side or synthesizes a consensus, with reasoning.',
+    ],
+    whenToUse: 'Decisions and trade-offs where the strongest case for each side should be heard first.',
+    tradeoff: 'Adds rounds of argument before any answer; the verdict quality depends on the judge.',
   },
   v6: {
     value: 'v6',
@@ -166,6 +212,14 @@ export const MODES: Record<Mode, ModeSpec> = {
       'Diagnose why a checkout funnel is leaking and converge on fixes',
     ],
     durationHint: 'up to ~4 min',
+    howItWorks: [
+      'Agents share a structured blackboard of named sections.',
+      'Each round, a controller inspects the board and picks who acts next based on its content.',
+      'The chosen agent reads the whole board, contributes a section, and writes back.',
+      'The loop continues until a solution emerges or the board stops changing.',
+    ],
+    whenToUse: 'Problems whose answer assembles from many partial contributions converging on a shared artifact.',
+    tradeoff: 'Controller selection can loop; no direct peer messaging means coordination is slower.',
   },
   v7: {
     value: 'v7',
@@ -190,6 +244,14 @@ export const MODES: Record<Mode, ModeSpec> = {
       'Build a small dashboard spec: data model, API, UI, and an analytics view',
     ],
     durationHint: 'up to ~4 min',
+    howItWorks: [
+      'A dispatcher decomposes the request into tasks and posts them to a market.',
+      'Specialist agents bid on tasks they fit, advertising confidence and estimated cost.',
+      'The dispatcher awards each task to the best bidder, capping how many one agent can win.',
+      'Winners execute in parallel; the dispatcher synthesizes their deliverables.',
+    ],
+    whenToUse: 'Heterogeneous work where the best agent for each task is not obvious up front.',
+    tradeoff: 'The bid round is extra LLM calls; only worth it for larger, varied agent pools.',
   },
 };
 

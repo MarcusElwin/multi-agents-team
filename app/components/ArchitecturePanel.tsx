@@ -1,9 +1,64 @@
 'use client';
 
-import { useState } from 'react';
-import { ArrowRight, ArrowLeftRight, ChevronDown } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowRight, ArrowLeftRight, ChevronDown, X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { MODES, type Mode } from '@/lib/modes';
+
+/**
+ * Slide-over panel (right side, like the debug drawer) hosting the architecture
+ * diagram + how-it-works explanation for the current mode. Toggled from a header
+ * button so it doesn't crowd the chat column.
+ */
+export function ArchitectureDrawer({
+  mode,
+  open,
+  onClose,
+}: {
+  mode: Mode;
+  open: boolean;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+
+  return (
+    <>
+      {open && (
+        <div className="fixed inset-0 z-40 bg-stone-900/20 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
+      )}
+      <aside
+        className={cn(
+          'fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col border-l border-stone-200 bg-white shadow-2xl transition-transform duration-200 ease-out',
+          open ? 'translate-x-0' : 'translate-x-full',
+        )}
+        aria-hidden={!open}
+      >
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-stone-200 px-4">
+          <div className="text-sm font-semibold">Architecture</div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+            aria-label="Close architecture panel"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 [scrollbar-width:thin]">
+          {/* Borderless variant inside the drawer chrome. */}
+          <ArchitecturePanel mode={mode} bare />
+        </div>
+      </aside>
+    </>
+  );
+}
 
 /**
  * Visual hierarchy + capability descriptions for the selected agentic system.
@@ -18,11 +73,14 @@ export function ArchitecturePanel({
   className,
   collapsible = false,
   defaultOpen = false,
+  bare = false,
 }: {
   mode: Mode;
   className?: string;
   collapsible?: boolean;
   defaultOpen?: boolean;
+  /** Drop the card chrome (border/bg) — for use inside the drawer. */
+  bare?: boolean;
 }) {
   const spec = MODES[mode];
   const [open, setOpen] = useState(collapsible ? defaultOpen : true);
@@ -42,8 +100,9 @@ export function ArchitecturePanel({
     </div>
   );
 
+  const pad = bare ? '' : 'px-5';
   return (
-    <div className={cn('rounded-2xl border border-stone-200 bg-white', className)}>
+    <div className={cn(!bare && 'rounded-2xl border border-stone-200 bg-white', className)}>
       {collapsible ? (
         <button
           type="button"
@@ -54,11 +113,11 @@ export function ArchitecturePanel({
           {header}
         </button>
       ) : (
-        <div className="px-5 pt-5">{header}</div>
+        <div className={cn(pad, bare ? '' : 'pt-5')}>{header}</div>
       )}
 
       {open && (
-        <div className={cn('px-5 pb-5', collapsible ? 'pt-0' : 'pt-1')}>
+        <div className={cn(pad, bare ? 'pt-3' : 'pb-5', collapsible ? 'pt-0' : !bare && 'pt-1')}>
           <p className="mb-5 text-xs leading-relaxed text-stone-500">{spec.description}</p>
 
           {mode === 'v1' ? (
@@ -71,7 +130,33 @@ export function ArchitecturePanel({
             <GenericDiagram mode={mode} />
           )}
 
-          <div className="mt-5 space-y-2 border-t border-stone-100 pt-4">
+          <div className="mt-5 border-t border-stone-100 pt-4">
+            <SectionLabel>How it works</SectionLabel>
+            <ol className="mt-1.5 space-y-1.5">
+              {spec.howItWorks.map((step, i) => (
+                <li key={i} className="flex gap-2 text-xs text-stone-600">
+                  <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-stone-100 text-[9px] font-semibold text-stone-500">
+                    {i + 1}
+                  </span>
+                  <span className="leading-snug">{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-green-100 bg-green-50/50 p-2.5">
+              <SectionLabel>When to use</SectionLabel>
+              <p className="mt-1 text-[11px] leading-snug text-stone-600">{spec.whenToUse}</p>
+            </div>
+            <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-2.5">
+              <SectionLabel>Trade-off</SectionLabel>
+              <p className="mt-1 text-[11px] leading-snug text-stone-600">{spec.tradeoff}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2 border-t border-stone-100 pt-4">
+            <SectionLabel>Agents</SectionLabel>
             {spec.agents.map((a) => (
               <div key={a.id} className="flex items-baseline gap-2 text-xs">
                 <span className="w-20 shrink-0 font-medium text-stone-800">{a.name}</span>
@@ -82,6 +167,12 @@ export function ArchitecturePanel({
         </div>
       )}
     </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">{children}</div>
   );
 }
 

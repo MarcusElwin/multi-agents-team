@@ -111,6 +111,7 @@ export class DebateRunner {
     const conStance = `the opposing / con position on: ${userQuery}`;
 
     const transcript: string[] = [];
+    const turns: Array<{ stance: string; round: number; argument: string }> = [];
     let lastAffArgument = "";
     let lastConArgument = "";
 
@@ -121,12 +122,14 @@ export class DebateRunner {
       const affArg = await this.runDebater(AFFIRMATIVE, affStance, round, lastConArgument, userQuery);
       lastAffArgument = affArg;
       transcript.push(`### Round ${round} — ${AFFIRMATIVE}\n${affArg}`);
+      turns.push({ stance: AFFIRMATIVE, round, argument: affArg });
       this.emit({ type: "bus_message", from: AFFIRMATIVE, to: "debate", messageType: "agent", content: affArg });
 
       // Opposing rebuts the Affirmative's just-made argument.
       const conArg = await this.runDebater(OPPOSING, conStance, round, lastAffArgument, userQuery);
       lastConArgument = conArg;
       transcript.push(`### Round ${round} — ${OPPOSING}\n${conArg}`);
+      turns.push({ stance: OPPOSING, round, argument: conArg });
       this.emit({ type: "bus_message", from: OPPOSING, to: "debate", messageType: "agent", content: conArg });
     }
 
@@ -161,6 +164,7 @@ export class DebateRunner {
       totalInputTokens: this.totalIn,
       totalOutputTokens: this.totalOut,
       totalCostUsd: this.totalCost,
+      summary: { kind: "debate", question: userQuery, turns, verdict },
     });
 
     return {

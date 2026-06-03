@@ -1,6 +1,6 @@
 import { Conversation } from "./conversation";
 import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel } from "./models";
-import type { AgentEvent, EventSink } from "./agent-events";
+import type { AgentEvent, EventSink, RunSummary } from "./agent-events";
 import { createDispatcherAgent } from "./agents-v7/dispatcher-agent";
 import { createWorkerAgent } from "./agents-v7/worker-agent";
 import * as log from "./logger";
@@ -111,19 +111,33 @@ export class MarketRunner {
     const startTime = Date.now();
     this.emit({ type: "workflow_start", mode: "v7", model: this.model, query: userQuery, startingAgent: "dispatcher" });
 
+    // Structured summary accumulators for the auction board (tasks → bids → awards).
+    const summaryTasks: Array<{ taskId: string; title: string }> = [];
+    const summaryBids: Array<{ taskId: string; agent: string; fit: number; estCostUsd: number }> = [];
+    const summaryAwards: Array<{ taskId: string; agent: string; output?: string }> = [];
+
     // (a) Dispatcher posts tasks.
     const tasks = await this.postTasks(userQuery);
     if (tasks.length === 0) {
       // Guard: nothing to auction. Fall back to a single dispatcher answer.
       const fallback = await this.synthesize(userQuery, []);
-      return this.finish(fallback, [], startTime);
+      return this.finish(fallback, [], startTime, {
+        kind: "market",
+        tasks: summaryTasks,
+        bids: summaryBids,
+        awards: summaryAwards,
+      });
     }
     for (const t of tasks) {
       this.emit({ type: "task_posted", taskId: t.id, title: t.title });
+      summaryTasks.push({ taskId: t.id, title: t.title });
     }
 
     // (b) Bid round: every worker bids on the posted tasks.
     const bids = await this.collectBids(userQuery, tasks);
+    for (const b of bids) {
+      summaryBids.push({ taskId: b.taskId, agent: b.agent, fit: b.fit, estCostUsd: b.estCostUsd });
+    }
 
     // (c) Award: greedily assign each task to its best bidder (bundle-capped).
     const awards = this.award(tasks, bids);
@@ -141,12 +155,21 @@ export class MarketRunner {
         })),
       ),
     );
+    // Record awards with the winner's deliverable text (available at synthesis time).
+    for (const d of deliverables) {
+      summaryAwards.push({ taskId: d.task.id, agent: d.agent, output: d.output || undefined });
+    }
 
     // (e) Synthesize a final deliverable from all completed work.
     const finalOutput = await this.synthesize(userQuery, deliverables);
 
     const agentsUsed = [...new Set(awards.map((a) => a.agent))];
-    return this.finish(finalOutput, agentsUsed, startTime);
+    return this.finish(finalOutput, agentsUsed, startTime, {
+      kind: "market",
+      tasks: summaryTasks,
+      bids: summaryBids,
+      awards: summaryAwards,
+    });
   }
 
   /** (a) Run the dispatcher and read its postTasks result. */
@@ -325,7 +348,7 @@ export class MarketRunner {
     return result.text;
   }
 
-  private finish(finalOutput: string, agentsUsed: string[], startTime: number): MarketResult {
+  private finish(finalOutput: string, agentsUsed: string[], startTime: number, summary?: RunSummary): MarketResult {
     const totalDuration = Date.now() - startTime;
     log.box("✅ v7 Complete", "green");
     log.kv({
@@ -345,6 +368,7 @@ export class MarketRunner {
       totalInputTokens: this.totalIn,
       totalOutputTokens: this.totalOut,
       totalCostUsd: this.totalCost,
+      summary,
     });
 
     return {

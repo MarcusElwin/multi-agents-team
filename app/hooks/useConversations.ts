@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Mode } from '@/lib/modes';
+import type { RunSummary } from '@/lib/agent-events';
 
 /**
  * A single user/assistant message as persisted in a stored conversation. Mirrors
@@ -23,6 +24,9 @@ export interface StoredMessage {
     // For v2: each agent's deliverable, rendered as a build-plan card. `output`
     // is the full text so the card can show a collapsible deliverable.
     perAgent?: Array<{ agent: string; duration: number; completed: boolean; output?: string }>;
+    // For v4–v7: a pattern-specific summary rendered as a bespoke card above the
+    // markdown result (score ladder, debate, blackboard, auction).
+    summary?: RunSummary;
   };
 }
 

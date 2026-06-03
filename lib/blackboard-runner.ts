@@ -217,6 +217,7 @@ export class BlackboardRunner {
     const iterations = Math.min(round, MAX_ROUNDS);
     const finalOutput = renderResult(board);
     const totalDuration = Date.now() - startTime;
+    const sections = [...board.entries()].map(([section, entry]) => ({ section, author: entry.author, content: entry.content }));
 
     log.box("✅ v6 Complete", "green");
     log.kv({
@@ -237,6 +238,7 @@ export class BlackboardRunner {
       totalInputTokens: this.totalIn,
       totalOutputTokens: this.totalOut,
       totalCostUsd: this.totalCost,
+      summary: { kind: "blackboard", sections },
     });
 
     return {

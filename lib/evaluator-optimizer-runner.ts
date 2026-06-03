@@ -118,6 +118,7 @@ export class EvaluatorOptimizerRunner {
     let lastIssues: string[] = [];
     let finalScore = 0;
     let round = 0;
+    const rounds: Array<{ round: number; score: number; passed: boolean; issues: string[]; draft: string }> = [];
 
     while (round < MAX_ROUNDS) {
       round++;
@@ -146,6 +147,7 @@ export class EvaluatorOptimizerRunner {
       lastIssues = critique.issues;
 
       const passed = critique.score >= THRESHOLD;
+      rounds.push({ round, score: critique.score, passed, issues: critique.issues, draft });
       this.emit({
         type: "critique",
         round,
@@ -195,6 +197,7 @@ export class EvaluatorOptimizerRunner {
       totalInputTokens: this.totalIn,
       totalOutputTokens: this.totalOut,
       totalCostUsd: this.totalCost,
+      summary: { kind: "evaluator", rounds },
     });
 
     return {

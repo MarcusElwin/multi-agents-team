@@ -127,8 +127,35 @@ export type AgentEvent =
       totalInputTokens?: number;
       totalOutputTokens?: number;
       totalCostUsd?: number;
+      // Optional structured summary for a pattern-specific in-chat visualization
+      // (v4 score ladder, v5 debate, v6 blackboard, v7 auction). Persists in the
+      // message so the rich view survives reload.
+      summary?: RunSummary;
     }
   | { type: 'workflow_error'; error: string };
+
+/** Pattern-specific summaries rendered as bespoke cards in the completed message. */
+export type RunSummary =
+  | {
+      kind: 'evaluator';
+      rounds: Array<{ round: number; score: number; passed: boolean; issues: string[]; draft: string }>;
+    }
+  | {
+      kind: 'debate';
+      question: string;
+      turns: Array<{ stance: string; round: number; argument: string }>;
+      verdict: { winner: string; reasoning: string; synthesis: string };
+    }
+  | {
+      kind: 'blackboard';
+      sections: Array<{ section: string; author: string; content: string }>;
+    }
+  | {
+      kind: 'market';
+      tasks: Array<{ taskId: string; title: string }>;
+      bids: Array<{ taskId: string; agent: string; fit: number; estCostUsd: number }>;
+      awards: Array<{ taskId: string; agent: string; output?: string }>;
+    };
 
 export type EventSink = (event: AgentEvent) => void;
 

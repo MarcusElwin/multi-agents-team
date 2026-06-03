@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import { ArrowRight, Code2, KeyRound, Sparkles } from 'lucide-react';
-import { MODE_LIST } from '@/lib/modes';
+import { ArrowRight, Code2, KeyRound, Sparkles, Star, GitFork } from 'lucide-react';
+import { ArchitectureCards } from './components/ArchitectureCards';
 
 export const metadata = {
   title: 'Multi-Agent Team — seven ways to coordinate LLM agents',
@@ -9,8 +9,26 @@ export const metadata = {
 };
 
 const BYO_ONLY = process.env.NEXT_PUBLIC_BYO_KEY_ONLY === 'true';
+const REPO_URL = 'https://github.com/MarcusElwin/multi-agents-team';
 
-export default function Landing() {
+/** Live star/fork counts from the GitHub API (cached 1h). Null on failure. */
+async function getRepoStats(): Promise<{ stars: number; forks: number } | null> {
+  try {
+    const res = await fetch('https://api.github.com/repos/MarcusElwin/multi-agents-team', {
+      headers: { Accept: 'application/vnd.github+json' },
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { stars: data.stargazers_count ?? 0, forks: data.forks_count ?? 0 };
+  } catch {
+    return null;
+  }
+}
+
+export default async function Landing() {
+  const stats = await getRepoStats();
+
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
       {/* Top bar */}
@@ -23,12 +41,26 @@ export default function Landing() {
         </div>
         <div className="flex items-center gap-3">
           <a
-            href="https://github.com/MarcusElwin/multi-agents-team"
+            href={REPO_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-stone-900"
+            className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-sm text-stone-600 hover:border-stone-300 hover:text-stone-900"
           >
             <Code2 className="h-4 w-4" /> GitHub
+            {stats && (stats.stars > 0 || stats.forks > 0) && (
+              <span className="flex items-center gap-2 border-l border-stone-200 pl-2 text-stone-500">
+                {stats.stars > 0 && (
+                  <span className="inline-flex items-center gap-0.5 tabular-nums">
+                    <Star className="h-3.5 w-3.5" /> {stats.stars}
+                  </span>
+                )}
+                {stats.forks > 0 && (
+                  <span className="inline-flex items-center gap-0.5 tabular-nums">
+                    <GitFork className="h-3.5 w-3.5" /> {stats.forks}
+                  </span>
+                )}
+              </span>
+            )}
           </a>
           <Link
             href="/chat"
@@ -90,27 +122,9 @@ export default function Landing() {
 
       {/* Patterns */}
       <section id="patterns" className="mx-auto max-w-5xl px-6 pb-16">
-        <h2 className="mb-6 text-center text-2xl font-semibold tracking-tight">The seven architectures</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {MODE_LIST.map((m) => (
-            <div key={m.value} className="flex flex-col rounded-2xl border border-stone-200 bg-white p-5">
-              <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200 bg-stone-50 text-stone-700">
-                  <m.icon className="h-4 w-4" />
-                </span>
-                <div>
-                  <div className="text-sm font-semibold text-stone-900">{m.pattern}</div>
-                  <div className="font-mono text-[10px] uppercase tracking-wide text-stone-400">{m.value}</div>
-                </div>
-              </div>
-              <p className="mt-3 text-sm leading-snug text-stone-600">{m.tagline}</p>
-              <div className="mt-auto space-y-1.5 pt-4 text-[12px] leading-snug">
-                <p className="text-stone-500"><span className="font-medium text-stone-700">Best for:</span> {m.whenToUse}</p>
-                <p className="text-stone-400"><span className="font-medium text-stone-500">Trade-off:</span> {m.tradeoff}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+        <h2 className="mb-2 text-center text-2xl font-semibold tracking-tight">The seven architectures</h2>
+        <p className="mb-6 text-center text-sm text-stone-500">Tap any card for how it works, the agents, notes, and references.</p>
+        <ArchitectureCards />
       </section>
 
       {/* CTA */}
@@ -129,7 +143,16 @@ export default function Landing() {
       </section>
 
       <footer className="border-t border-stone-200 py-8 text-center text-xs text-stone-400">
-        Multi-Agent Team · a multi-agent AI playground · MIT
+        Made with <span className="text-red-400">♥</span> in Stockholm by{' '}
+        <a
+          href="https://umaitech.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-stone-500 underline-offset-2 hover:text-stone-900 hover:underline"
+        >
+          Marcus Elwin @ UmaiTech
+        </a>
+        {' · '}MIT
       </footer>
     </main>
   );

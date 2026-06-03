@@ -89,6 +89,47 @@ export const MarkdownContent = memo(function MarkdownContent({
         continue;
       }
 
+      // Markdown pipe table: a "| a | b |" header, a "|---|---|" separator, then
+      // "| … |" rows. Render as a real <table> instead of leaking raw pipes.
+      const isTableRow = (l: string) => /^\s*\|.*\|\s*$/.test(l);
+      const isTableSep = (l: string) => /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(l) && l.includes('-');
+      if (isTableRow(line) && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+        if (inList) flushList();
+        const splitRow = (l: string) =>
+          l.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+        const headers = splitRow(line);
+        i += 2; // skip header + separator
+        const rows: string[][] = [];
+        while (i < lines.length && isTableRow(lines[i]) && !isTableSep(lines[i])) {
+          rows.push(splitRow(lines[i]));
+          i++;
+        }
+        i--; // the for-loop ++ will land on the next unprocessed line
+        out.push(
+          <div key={`tbl-${i}`} className="my-2 overflow-x-auto rounded-lg border border-stone-200">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-stone-50 text-[11px] font-medium text-stone-500">
+                <tr>
+                  {headers.map((h, hi) => (
+                    <th key={hi} className="px-2.5 py-1.5">{formatInline(h)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {rows.map((r, ri) => (
+                  <tr key={ri}>
+                    {r.map((c, ci) => (
+                      <td key={ci} className="px-2.5 py-1.5 text-stone-700">{formatInline(c)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+        continue;
+      }
+
       if (/^[-*]\s/.test(line)) {
         inList = true;
         listItems.push(line.replace(/^[-*]\s/, ''));

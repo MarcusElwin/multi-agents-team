@@ -14,10 +14,7 @@ Fireworks** and watch the agents reason, call tools, and converge live.
 
 | Settings — bring your own key | Architecture pages |
 | --- | --- |
-| ![Settings drawer](docs/images/settings.png) | ![Architecture pages](docs/images/architecture.svg) |
-
-> The architecture-pages image is still a placeholder — see
-> [`docs/images/README.md`](docs/images/README.md) to swap it in.
+| ![Settings drawer](docs/images/settings.png) | ![Architecture pages](docs/images/architecture.png) |
 
 ## Overview
 

@@ -620,8 +620,10 @@ function buildAssistantMessage(
     };
   }
 
-  // v1 and v3 both deliver a single synthesized `result` markdown blob.
-  if (finalEvent.mode === 'v1' || finalEvent.mode === 'v3') {
+  // Every mode except v2 delivers a single synthesized `result` markdown blob
+  // (v1 orchestrated, v3 hierarchical, v4 evaluator-optimizer, v5 debate,
+  // v6 blackboard, v7 market). v2 alone renders as a BuildPlan board.
+  if (finalEvent.mode !== 'v2') {
     return {
       id: crypto.randomUUID(),
       role: 'assistant',
@@ -868,12 +870,12 @@ function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
           'rounded-full border px-2 py-0.5 font-medium',
           meta.mode === 'v1'
             ? 'border-blue-200 bg-blue-50 text-blue-700'
-            : meta.mode === 'v3'
-              ? 'border-yellow-200 bg-yellow-50 text-yellow-700'
-              : 'border-purple-200 bg-purple-50 text-purple-700'
+            : meta.mode === 'v2'
+              ? 'border-purple-200 bg-purple-50 text-purple-700'
+              : 'border-yellow-200 bg-yellow-50 text-yellow-700'
         )}
       >
-        {meta.mode === 'v1' ? 'orchestrated' : meta.mode === 'v3' ? 'hierarchical' : 'choreographed'}
+        {(MODES[meta.mode] ?? MODES.v1).pattern.toLowerCase()}
       </span>
       {meta.model && (
         <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 font-mono text-stone-600">
@@ -882,7 +884,7 @@ function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
       )}
       {meta.iterations !== undefined && (
         <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-600">
-          {meta.mode === 'v1' ? `${meta.iterations} msgs` : meta.mode === 'v3' ? `${meta.iterations} agents` : `${meta.iterations} iter`}
+          {meta.mode === 'v1' ? `${meta.iterations} msgs` : meta.mode === 'v2' ? `${meta.iterations} iter` : `${meta.iterations} agents`}
         </span>
       )}
       {meta.totalDuration !== undefined && (

@@ -388,6 +388,42 @@ function eventMeta(event: AgentEvent): {
             : `web search done · ${event.sources ?? 0} sources`,
         subline: event.status === 'start' ? undefined : event.query,
       };
+    case 'critique':
+      return {
+        tag: `round ${event.round}`,
+        tone: event.passed
+          ? 'border-green-200 bg-green-50 text-green-700'
+          : 'border-orange-200 bg-orange-50 text-orange-700',
+        headline: `critique · score ${event.score}/10${event.passed ? ' · passed' : ''}`,
+        subline: event.issues.join(' · '),
+      };
+    case 'blackboard_update':
+      return {
+        tag: 'board',
+        tone: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+        headline: `${event.author} wrote "${event.section}"`,
+        subline: event.preview,
+      };
+    case 'task_posted':
+      return {
+        tag: 'task',
+        tone: 'border-amber-200 bg-amber-50 text-amber-700',
+        headline: `task posted: ${event.title}`,
+        subline: event.taskId,
+      };
+    case 'bid':
+      return {
+        tag: 'bid',
+        tone: 'border-sky-200 bg-sky-50 text-sky-700',
+        headline: `${event.agent} bid on ${event.taskId}`,
+        subline: `fit ${(event.fit * 100).toFixed(0)}% · ~$${event.estCostUsd.toFixed(4)}`,
+      };
+    case 'task_awarded':
+      return {
+        tag: 'award',
+        tone: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+        headline: `${event.taskId} → ${event.agent}`,
+      };
     default: {
       // Exhaustiveness guard: if a new AgentEvent variant is added without a
       // case above, TS errors here on the `never` assignment.

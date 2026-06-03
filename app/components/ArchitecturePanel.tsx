@@ -61,7 +61,15 @@ export function ArchitecturePanel({
         <div className={cn('px-5 pb-5', collapsible ? 'pt-0' : 'pt-1')}>
           <p className="mb-5 text-xs leading-relaxed text-stone-500">{spec.description}</p>
 
-          {mode === 'v1' ? <OrchestratedDiagram /> : mode === 'v3' ? <HierarchicalDiagram /> : <ChoreographedDiagram />}
+          {mode === 'v1' ? (
+            <OrchestratedDiagram />
+          ) : mode === 'v2' ? (
+            <ChoreographedDiagram />
+          ) : mode === 'v3' ? (
+            <HierarchicalDiagram />
+          ) : (
+            <GenericDiagram mode={mode} />
+          )}
 
           <div className="mt-5 space-y-2 border-t border-stone-100 pt-4">
             {spec.agents.map((a) => (
@@ -149,6 +157,25 @@ function HierarchicalDiagram() {
         ))}
       </div>
       <p className="text-[10px] text-stone-400">lead spawns sub-agents at runtime · children run in parallel · depth-capped</p>
+    </div>
+  );
+}
+
+/** Fallback diagram for modes without a bespoke layout (v4–v7): the mode's own
+ *  agents as nodes plus its tagline. */
+function GenericDiagram({ mode }: { mode: Mode }) {
+  const spec = MODES[mode];
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        {spec.agents.map((a, i) => (
+          <div key={a.id} className="flex items-center gap-2">
+            <Node label={a.name} tone={i === 0 ? 'lead' : 'specialist'} />
+            {i < spec.agents.length - 1 && <ArrowRight className="h-3.5 w-3.5 text-stone-300" />}
+          </div>
+        ))}
+      </div>
+      <p className="text-[10px] text-stone-400">{spec.tagline}</p>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 export type AgentEvent =
   | {
       type: 'workflow_start';
-      mode: 'v1' | 'v2' | 'v3';
+      mode: 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7';
       model: string;
       query: string;
       startingAgent?: string;
@@ -67,6 +67,41 @@ export type AgentEvent =
       depth: number;
     }
   | {
+      // v4 evaluator–optimizer: the critic scored a draft this round.
+      type: 'critique';
+      round: number;
+      score: number; // 0–10
+      passed: boolean;
+      issues: string[];
+    }
+  | {
+      // v6 blackboard: a section of the shared workspace was written/updated.
+      type: 'blackboard_update';
+      section: string;
+      author: string;
+      preview: string;
+    }
+  | {
+      // v7 market: a task was posted to the auction board.
+      type: 'task_posted';
+      taskId: string;
+      title: string;
+    }
+  | {
+      // v7 market: an agent bid on a task (fit 0–1, estimated USD).
+      type: 'bid';
+      taskId: string;
+      agent: string;
+      fit: number;
+      estCostUsd: number;
+    }
+  | {
+      // v7 market: a task was awarded to the winning bidder.
+      type: 'task_awarded';
+      taskId: string;
+      agent: string;
+    }
+  | {
       type: 'bus_message';
       from: string;
       to: string;
@@ -76,7 +111,7 @@ export type AgentEvent =
   | { type: 'handoff'; from: string; to: string }
   | {
       type: 'workflow_complete';
-      mode: 'v1' | 'v2' | 'v3';
+      mode: 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7';
       result?: string;
       agentResults?: Array<{
         agent: string;

@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
-import { Workflow, Network, GitBranch } from 'lucide-react';
+import { Workflow, Network, GitBranch, RefreshCw, Scale, LayoutGrid, Gavel } from 'lucide-react';
 
-export type Mode = 'v1' | 'v2' | 'v3';
+export type Mode = 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7';
 
 export interface AgentSpec {
   /** Canonical agent id used on the bus / in events. */
@@ -102,9 +102,98 @@ export const MODES: Record<Mode, ModeSpec> = {
     ],
     durationHint: 'up to ~5 min',
   },
+  v4: {
+    value: 'v4',
+    label: 'v4 evaluator–optimizer',
+    pattern: 'Evaluator–Optimizer',
+    icon: RefreshCw,
+    tagline: 'generate → critique → revise, until it passes',
+    description:
+      'A generator produces a draft; a critic scores it (0–10) against a rubric and lists concrete issues; the generator revises. The loop repeats until the critic passes (score ≥ 8) or a max-rounds cap. Best for a single artifact you want iteratively improved — a draft, spec, or piece of analysis.',
+    endpoint: '/api/agents-v4',
+    agents: [
+      { id: 'generator', name: 'Generator', role: 'Produces and revises the deliverable' },
+      { id: 'critic', name: 'Critic', role: 'Scores against a rubric and lists issues' },
+    ],
+    suggestions: [
+      'Write a crisp product one-pager for an AI code-review tool, then refine it to a high bar',
+      'Draft a tweet thread explaining vector databases, iterated for clarity and punch',
+      'Write and polish a function that debounces async calls with cancellation',
+      'Produce a tight executive summary of the state of agentic commerce',
+    ],
+    durationHint: 'up to ~3 min',
+  },
+  v5: {
+    value: 'v5',
+    label: 'v5 debate',
+    pattern: 'Debate',
+    icon: Scale,
+    tagline: 'opposing sides argue, a judge decides',
+    description:
+      'Two debaters argue opposing positions on your question across several rounds, each rebutting the other, then a judge picks a winner or synthesizes a consensus with reasoning. Best for decisions and trade-offs where the strongest case for each side should be heard before a verdict.',
+    endpoint: '/api/agents-v5',
+    agents: [
+      { id: 'Affirmative', name: 'Affirmative', role: 'Argues the pro position' },
+      { id: 'Opposing', name: 'Opposing', role: 'Argues the con position' },
+      { id: 'Judge', name: 'Judge', role: 'Weighs both sides and rules' },
+    ],
+    suggestions: [
+      'SQL vs NoSQL for a new high-traffic analytics product — which should we choose?',
+      'Should an early-stage startup build on a monolith or microservices?',
+      'Remote-first vs in-office for a 20-person engineering team',
+      'Should we adopt an agent framework or build our own harness?',
+    ],
+    durationHint: 'up to ~3 min',
+  },
+  v6: {
+    value: 'v6',
+    label: 'v6 blackboard',
+    pattern: 'Blackboard',
+    icon: LayoutGrid,
+    tagline: 'agents share one workspace; a controller picks who acts',
+    description:
+      'Agents share a structured blackboard. A controller inspects the board each round and selects who acts next based on its content — not a fixed schedule. The chosen agent reads the whole board, contributes a section, and writes back, until a solution emerges. Best when an answer assembles from many partial contributions.',
+    endpoint: '/api/agents-v6',
+    agents: [
+      { id: 'analyst', name: 'Analyst', role: 'Frames the problem and facts' },
+      { id: 'planner', name: 'Planner', role: 'Proposes the approach/solution' },
+      { id: 'critic', name: 'Critic', role: 'Stress-tests and refines the board' },
+    ],
+    suggestions: [
+      'Design a content moderation system: gather facts, plan an approach, critique it',
+      'Plan a migration from a monolith to services, building the plan on a shared board',
+      'Work out a go-to-market for a developer tool, contributing from multiple angles',
+      'Diagnose why a checkout funnel is leaking and converge on fixes',
+    ],
+    durationHint: 'up to ~4 min',
+  },
+  v7: {
+    value: 'v7',
+    label: 'v7 market',
+    pattern: 'Market',
+    icon: Gavel,
+    tagline: 'agents bid on tasks; best bid wins',
+    description:
+      'A dispatcher decomposes the request into tasks and posts them to a market. A pool of specialist agents bid on tasks (advertising fit and estimated cost); the dispatcher awards each task to the best bidder, winners execute in parallel, and results are synthesized. Best for heterogeneous work where "who should do this?" isn\'t obvious.',
+    endpoint: '/api/agents-v7',
+    agents: [
+      { id: 'dispatcher', name: 'Dispatcher', role: 'Posts tasks and synthesizes results' },
+      { id: 'researcher', name: 'Researcher', role: 'Bids on research tasks' },
+      { id: 'engineer', name: 'Engineer', role: 'Bids on build tasks' },
+      { id: 'designer', name: 'Designer', role: 'Bids on design tasks' },
+      { id: 'analyst', name: 'Analyst', role: 'Bids on analysis tasks' },
+    ],
+    suggestions: [
+      'Launch a waitlist landing page for a new SaaS: research, copy, design, and build',
+      'Produce a competitive teardown of three note-taking apps',
+      'Plan and draft a technical blog post with research, writing, and a diagram',
+      'Build a small dashboard spec: data model, API, UI, and an analytics view',
+    ],
+    durationHint: 'up to ~4 min',
+  },
 };
 
-export const MODE_LIST: ModeSpec[] = [MODES.v1, MODES.v2, MODES.v3];
+export const MODE_LIST: ModeSpec[] = [MODES.v1, MODES.v2, MODES.v3, MODES.v4, MODES.v5, MODES.v6, MODES.v7];
 
 /** Pretty-print an agent id like "writerAgent" → "Writer". */
 export function prettyAgentName(id: string): string {

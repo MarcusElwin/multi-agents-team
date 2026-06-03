@@ -45,7 +45,7 @@ export interface LiveAgent {
 
 interface AgentTimelineProps {
   agents: LiveAgent[];
-  mode: 'v1' | 'v2' | 'v3';
+  mode: 'v1' | 'v2' | 'v3' | 'v4' | 'v5' | 'v6' | 'v7';
   currentAgent?: string;
   iteration?: number;
   now: number;

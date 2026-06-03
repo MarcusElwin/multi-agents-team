@@ -3,7 +3,7 @@ import { ArrowRight, Code2, KeyRound, Sparkles, Star, GitFork } from 'lucide-rea
 import { ArchitectureCards } from './components/ArchitectureCards';
 
 export const metadata = {
-  title: 'Multi-Agent Team — seven ways to coordinate LLM agents',
+  title: 'Multi-Agent Team — nine ways to coordinate LLM agents',
   description:
     'A hands-on playground for multi-agent AI architectures: orchestrated, choreographed, hierarchical, evaluator–optimizer, debate, blackboard, and market. Bring your own API key.',
 };
@@ -40,6 +40,9 @@ export default async function Landing() {
           <span className="text-sm font-semibold">Multi-Agent Team</span>
         </div>
         <div className="flex items-center gap-3">
+          <Link href="/references" className="hidden text-sm text-stone-500 hover:text-stone-900 sm:inline">
+            References
+          </Link>
           <a
             href={REPO_URL}
             target="_blank"
@@ -77,10 +80,10 @@ export default async function Landing() {
           Built on the Vercel AI SDK
         </p>
         <h1 className="text-balance text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-          Seven ways to make AI agents work as a team
+          Nine ways to make AI agents work as a team
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-balance text-lg leading-relaxed text-stone-600">
-          The same request, solved by seven different multi-agent architectures — from a single
+          The same request, solved by nine different multi-agent architectures — from a single
           coordinator delegating to specialists, to peers negotiating on a bus, to a market where
           agents bid for work. Watch them think, stream live, and see what each pattern costs.
         </p>
@@ -122,7 +125,7 @@ export default async function Landing() {
 
       {/* Patterns */}
       <section id="patterns" className="mx-auto max-w-5xl px-6 pb-16">
-        <h2 className="mb-2 text-center text-2xl font-semibold tracking-tight">The seven architectures</h2>
+        <h2 className="mb-2 text-center text-2xl font-semibold tracking-tight">The nine architectures</h2>
         <p className="mb-6 text-center text-sm text-stone-500">Tap any card for how it works, the agents, notes, and references.</p>
         <ArchitectureCards />
       </section>

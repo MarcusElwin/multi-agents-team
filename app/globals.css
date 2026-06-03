@@ -105,6 +105,28 @@ body {
 .agentflow .af-flow-1 { animation: af-comet var(--af-loop) ease-in infinite; animation-delay: calc(var(--af-loop) * 0.24); }
 .agentflow .af-flow-2 { animation: af-comet var(--af-loop) ease-in infinite; animation-delay: calc(var(--af-loop) * 0.36); }
 .agentflow .af-flow-3 { animation: af-comet var(--af-loop) ease-in infinite; animation-delay: calc(var(--af-loop) * 0.48); }
+.agentflow .af-flow-4 { animation: af-comet var(--af-loop) ease-in infinite; animation-delay: calc(var(--af-loop) * 0.58); }
+
+/* Debate: two sides light up, volley arrows fly between them, judge lights last. */
+.agentflow .af-side { opacity: 0.5; animation: af-light var(--af-loop) ease-in-out infinite; }
+.agentflow .af-side-1 { animation-delay: calc(var(--af-loop) * 0.16); }
+.agentflow .af-side-2 { animation-delay: calc(var(--af-loop) * 0.24); }
+.agentflow .af-judge { opacity: 0.5; animation: af-light var(--af-loop) ease-in-out infinite; animation-delay: calc(var(--af-loop) * 0.6); }
+.agentflow .af-volley { fill: none; stroke: #1c1917; stroke-width: 2; stroke-linecap: round; marker-end: none; stroke-dasharray: 22 100; stroke-dashoffset: 122; opacity: 0; }
+.agentflow .af-volley-1 { animation: af-comet var(--af-loop) ease-in-out infinite; animation-delay: calc(var(--af-loop) * 0.30); }
+.agentflow .af-volley-2 { animation: af-comet var(--af-loop) ease-in-out infinite; animation-delay: calc(var(--af-loop) * 0.42); }
+
+/* Evaluator: generator + critic light up; loop arrows cycle; verdict appears. */
+.agentflow .af-gen { opacity: 0.5; animation: af-light var(--af-loop) ease-in-out infinite; animation-delay: calc(var(--af-loop) * 0.14); }
+.agentflow .af-gen .af-bar { opacity: 0; animation: af-work var(--af-loop) ease-in-out infinite; animation-delay: calc(var(--af-loop) * 0.14); }
+.agentflow .af-critic { opacity: 0.5; animation: af-light var(--af-loop) ease-in-out infinite; animation-delay: calc(var(--af-loop) * 0.3); }
+.agentflow .af-loop { fill: none; stroke: #1c1917; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 20 100; stroke-dashoffset: 120; opacity: 0; }
+.agentflow .af-loop-1 { animation: af-comet var(--af-loop) ease-in-out infinite; animation-delay: calc(var(--af-loop) * 0.22); }
+.agentflow .af-loop-2 { animation: af-comet var(--af-loop) ease-in-out infinite; animation-delay: calc(var(--af-loop) * 0.4); }
+.agentflow .af-verdict { opacity: 0; animation: af-fade-in var(--af-loop) ease-out infinite; animation-delay: calc(var(--af-loop) * 0.58); }
+
+/* Swarm: the shared scratchpad fills in once agents have contributed. */
+.agentflow .af-scratch { opacity: 0.5; animation: af-fade-in var(--af-loop) ease-out infinite; animation-delay: calc(var(--af-loop) * 0.55); }
 
 /* Final answer: pops in once the specialists have finished. */
 .agentflow .af-answer {
@@ -161,25 +183,31 @@ body {
   100% { opacity: 0; }
 }
 
+@keyframes af-fade-in {
+  0%, 6% { opacity: 0; transform: translateY(3px); }
+  16%, 92% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0.5; }
+}
+
 /* Calm static fallback — no motion, but the diagram still reads clearly. */
 @media (prefers-reduced-motion: reduce) {
+  .agentflow [class*='af-'] { animation: none !important; }
+  /* Show all nodes/labels statically; hide the motion-only travelling pulses. */
   .agentflow .af-query,
-  .agentflow .af-cursor,
-  .agentflow .af-wire-pulse,
   .agentflow .af-coordinator,
-  .agentflow .af-coordinator .af-dot,
   .agentflow .af-agent,
-  .agentflow .af-agent .af-bar,
+  .agentflow .af-side,
+  .agentflow .af-judge,
+  .agentflow .af-gen,
+  .agentflow .af-critic,
+  .agentflow .af-verdict,
+  .agentflow .af-scratch,
+  .agentflow .af-answer { opacity: 1 !important; transform: none !important; }
+  .agentflow .af-wire-pulse,
+  .agentflow .af-cursor,
   .agentflow .af-flow,
-  .agentflow .af-answer {
-    animation: none;
-  }
-  .agentflow .af-query,
-  .agentflow .af-coordinator,
-  .agentflow .af-agent,
-  .agentflow .af-answer { opacity: 1; transform: none; }
-  .agentflow .af-wire-pulse,
-  .agentflow .af-cursor,
-  .agentflow .af-flow { opacity: 0; }
-  .agentflow .af-agent .af-bar { opacity: 1; }
+  .agentflow .af-volley,
+  .agentflow .af-loop { opacity: 0 !important; }
+  .agentflow .af-agent .af-bar,
+  .agentflow .af-gen .af-bar { opacity: 1 !important; }
 }

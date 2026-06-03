@@ -115,7 +115,7 @@ export default async function Landing() {
       <section className="mx-auto max-w-5xl px-6 pb-14">
         <h2 className="mb-2 text-center text-2xl font-semibold tracking-tight">How a team handles one request</h2>
         <p className="mb-6 text-center text-sm text-stone-500">
-          A coordinator plans, delegates to specialists, and synthesizes the result — live.
+          The same job, coordinated four different ways. Pick a pattern — or watch them cycle.
         </p>
         <AgentFlow />
       </section>

@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useRef, useEffect, type FormEvent } from 'react';
-import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown, Code2, Network } from 'lucide-react';
+import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown, Code2, Network, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
-import { DEFAULT_MODEL, formatCost, type OpenAIModel } from '@/lib/models';
+import { DEFAULT_MODEL, formatCost, providerForModel, type OpenAIModel } from '@/lib/models';
 import { MODES, type Mode, prettyAgentName } from '@/lib/modes';
 import { MarkdownContent } from './components/MarkdownContent';
 import { ModelSelector } from './components/ModelSelector';
@@ -17,8 +17,10 @@ import { ChatSidebar } from './components/ChatSidebar';
 import { BuildPlan } from './components/BuildPlan';
 import { StrategyView } from './components/StrategyViews';
 import { CodePreview } from './components/CodePreview';
+import { SettingsDrawer } from './components/SettingsDrawer';
 import { extractCodeBlocks, type CodeBlock } from '@/lib/utils/extract-code';
 import { useConversations, type StoredMessage } from './hooks/useConversations';
+import { useSettings } from './hooks/useSettings';
 import type { AgentEvent } from '@/lib/agent-events';
 
 // The on-screen message shape is exactly what we persist, so reuse it to keep
@@ -65,6 +67,8 @@ export default function Home() {
   const [liveRunId, setLiveRunId] = useState<string | null>(null);
   const [debugOpen, setDebugOpen] = useState(false);
   const [archOpen, setArchOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { settings, setApiKey, clearApiKey } = useSettings();
   // Code preview side pane: opened from an agent deliverable's "View code".
   const [preview, setPreview] = useState<{ title: string; blocks: CodeBlock[] } | null>(null);
 
@@ -356,7 +360,14 @@ export default function Home() {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed, model, history }),
+        body: JSON.stringify({
+          message: trimmed,
+          model,
+          history,
+          // BYO key: send the user's key for this model's provider, if set.
+          provider: providerForModel(model),
+          apiKey: settings.apiKeys[providerForModel(model)],
+        }),
         signal: controller.signal,
       });
 
@@ -496,6 +507,21 @@ export default function Home() {
           <ModeSelector value={mode} onChange={setMode} disabled={isLoading} />
           <button
             type="button"
+            onClick={() => setSettingsOpen((v) => !v)}
+            className={cn(
+              'flex h-8 w-8 items-center justify-center rounded-full border transition-colors',
+              settingsOpen
+                ? 'border-stone-900 bg-stone-900 text-white'
+                : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:text-stone-900',
+            )}
+            aria-pressed={settingsOpen}
+            aria-label="API keys & settings"
+            title="API keys"
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
             onClick={() => setArchOpen((v) => !v)}
             className={cn(
               'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
@@ -624,6 +650,14 @@ export default function Home() {
       />
 
       <ArchitectureDrawer mode={mode} open={archOpen} onClose={() => setArchOpen(false)} />
+
+      <SettingsDrawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        apiKeys={settings.apiKeys}
+        onSetKey={setApiKey}
+        onClearKey={clearApiKey}
+      />
 
       <CodePreview
         open={preview !== null}

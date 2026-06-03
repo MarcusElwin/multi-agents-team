@@ -3,24 +3,31 @@ import { runSelfConsistency } from '@/lib/self-consistency-runner';
 import { Conversation, type ConversationTurn } from '@/lib/conversation';
 import { resolveModel } from '@/lib/models';
 import { resolveCredentials } from '@/lib/provider';
+import { validateAgentRunBody } from '@/lib/validate-request';
 import type { AgentEvent } from '@/lib/agent-events';
 
 export const maxDuration = 180;
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  const { message, model, history, apiKey, provider } = await req.json();
-
-  if (!message) {
-    return NextResponse.json({ error: 'Message required' }, { status: 400 });
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
+  const parsed = validateAgentRunBody(raw);
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  const { message, model, history, apiKey, provider } = parsed.body;
 
   const resolvedModel = resolveModel(model);
   const creds = resolveCredentials({ model: resolvedModel, apiKey, provider });
   if ('error' in creds) {
     return NextResponse.json({ error: creds.error }, { status: 400 });
   }
-  const priorTurns: ConversationTurn[] = Array.isArray(history) ? history : [];
+  const priorTurns: ConversationTurn[] = history;
 
   console.log('\n========================================');
   console.log(`🎬 API REQUEST: v8 self-consistency · model=${resolvedModel}`);

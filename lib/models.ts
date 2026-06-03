@@ -1,7 +1,9 @@
 import { createOpenAI, openai as envOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { createMistral } from '@ai-sdk/mistral';
+import { createFireworks } from '@ai-sdk/fireworks';
 
-export type ProviderId = 'openai' | 'anthropic';
+export type ProviderId = 'openai' | 'anthropic' | 'mistral' | 'fireworks';
 
 /**
  * A model id. Kept as a broad string at the catalog/boundary so adding
@@ -31,6 +33,15 @@ export const MODEL_OPTIONS: ModelOption[] = [
   { value: 'claude-opus-4-8', label: 'Claude Opus 4.8', provider: 'anthropic', description: 'Most capable Claude' },
   { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', provider: 'anthropic', description: 'Balanced Claude' },
   { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', provider: 'anthropic', description: 'Fast, low-cost Claude' },
+  // Mistral — `-latest` aliases track the newest stable snapshot of each tier.
+  { value: 'mistral-large-latest', label: 'Mistral Large', provider: 'mistral', description: 'Top-tier reasoning & multilingual' },
+  { value: 'mistral-medium-latest', label: 'Mistral Medium 3', provider: 'mistral', description: 'Balanced cost/performance' },
+  { value: 'magistral-medium-latest', label: 'Magistral Medium', provider: 'mistral', description: 'Reasoning-focused' },
+  { value: 'mistral-small-latest', label: 'Mistral Small 3', provider: 'mistral', description: 'Fast, low-cost' },
+  // Fireworks — open-weight models on serverless inference.
+  { value: 'accounts/fireworks/models/deepseek-v3p1', label: 'DeepSeek V3.1', provider: 'fireworks', description: 'Strong open MoE — reasoning & code' },
+  { value: 'accounts/fireworks/models/llama-v3p3-70b-instruct', label: 'Llama 3.3 70B', provider: 'fireworks', description: 'Open general-purpose' },
+  { value: 'accounts/fireworks/models/qwen3-235b-a22b-instruct-2507', label: 'Qwen3 235B', provider: 'fireworks', description: 'Large open MoE' },
 ];
 
 // Flagship by default — orchestration is most reliable on the strongest model.
@@ -81,6 +92,22 @@ export const PROVIDERS: Record<
     keysUrl: 'https://console.anthropic.com/settings/keys',
     createClient: (apiKey: string) => createAnthropic({ apiKey }),
   },
+  mistral: {
+    id: 'mistral',
+    label: 'Mistral AI',
+    envVar: 'MISTRAL_API_KEY',
+    keyPrefix: '',
+    keysUrl: 'https://console.mistral.ai/api-keys',
+    createClient: (apiKey: string) => createMistral({ apiKey }),
+  },
+  fireworks: {
+    id: 'fireworks',
+    label: 'Fireworks AI',
+    envVar: 'FIREWORKS_API_KEY',
+    keyPrefix: 'fw_',
+    keysUrl: 'https://fireworks.ai/account/api-keys',
+    createClient: (apiKey: string) => createFireworks({ apiKey }),
+  },
 };
 
 export const PROVIDER_LIST = Object.values(PROVIDERS);
@@ -102,6 +129,13 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
   'claude-opus-4-8': { input: 5, output: 25 },
   'claude-sonnet-4-6': { input: 3, output: 15 },
   'claude-haiku-4-5-20251001': { input: 1, output: 5 },
+  'mistral-large-latest': { input: 2, output: 6 },
+  'mistral-medium-latest': { input: 0.4, output: 2 },
+  'magistral-medium-latest': { input: 2, output: 5 },
+  'mistral-small-latest': { input: 0.1, output: 0.3 },
+  'accounts/fireworks/models/deepseek-v3p1': { input: 0.56, output: 1.68 },
+  'accounts/fireworks/models/llama-v3p3-70b-instruct': { input: 0.9, output: 0.9 },
+  'accounts/fireworks/models/qwen3-235b-a22b-instruct-2507': { input: 0.22, output: 0.88 },
 };
 
 export interface TokenUsage {

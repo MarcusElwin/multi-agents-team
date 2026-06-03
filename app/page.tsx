@@ -126,7 +126,7 @@ export default async function Landing() {
       {/* Patterns */}
       <section id="patterns" className="mx-auto max-w-5xl px-6 pb-16">
         <h2 className="mb-2 text-center text-2xl font-semibold tracking-tight">The nine architectures</h2>
-        <p className="mb-6 text-center text-sm text-stone-500">Tap any card for how it works, the agents, notes, and references.</p>
+        <p className="mb-6 text-center text-sm text-stone-500">Open any architecture for how it works, the agents, notes, and references.</p>
         <ArchitectureCards />
       </section>
 

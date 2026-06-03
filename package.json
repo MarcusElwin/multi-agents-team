@@ -37,5 +37,10 @@
     "tailwindcss": "^4",
     "tsx": "^4.20.6",
     "typescript": "^5"
+  },
+  "pnpm": {
+    "overrides": {
+      "baseline-browser-mapping": "^2.10.33"
+    }
   }
 }

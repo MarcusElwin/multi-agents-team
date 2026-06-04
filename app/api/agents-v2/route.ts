@@ -3,6 +3,7 @@ import { runAgentsWithCoordination } from '@/lib/runner';
 import { Conversation, type ConversationTurn } from '@/lib/conversation';
 import { resolveModel } from '@/lib/models';
 import { resolveCredentials } from '@/lib/provider';
+import { describeError } from '@/lib/error-message';
 import { validateAgentRunBody } from '@/lib/validate-request';
 import type { AgentEvent } from '@/lib/agent-events';
 
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
         console.log('✅ API RESPONSE: v2 Workflow Complete');
         console.log('========================================\n');
       } catch (error) {
-        const errMsg = error instanceof Error ? error.message : 'Unknown';
+        const errMsg = describeError(error);
         console.error('❌ v2 API Error:', errMsg);
         send({ type: 'workflow_error', error: errMsg });
       } finally {

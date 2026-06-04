@@ -39,9 +39,9 @@ export const MODEL_OPTIONS: ModelOption[] = [
   { value: 'magistral-medium-latest', label: 'Magistral Medium', provider: 'mistral', description: 'Reasoning-focused' },
   { value: 'mistral-small-latest', label: 'Mistral Small 3', provider: 'mistral', description: 'Fast, low-cost' },
   // Fireworks — open-weight models on serverless inference.
-  { value: 'accounts/fireworks/models/deepseek-v3p1', label: 'DeepSeek V3.1', provider: 'fireworks', description: 'Strong open MoE — reasoning & code' },
-  { value: 'accounts/fireworks/models/llama-v3p3-70b-instruct', label: 'Llama 3.3 70B', provider: 'fireworks', description: 'Open general-purpose' },
-  { value: 'accounts/fireworks/models/qwen3-235b-a22b-instruct-2507', label: 'Qwen3 235B', provider: 'fireworks', description: 'Large open MoE' },
+  { value: 'accounts/fireworks/models/deepseek-v4-pro', label: 'DeepSeek V4 Pro', provider: 'fireworks', description: 'Flagship open MoE — 1M context, tools' },
+  { value: 'accounts/fireworks/models/kimi-k2p6', label: 'Kimi K2.6', provider: 'fireworks', description: 'Strong open MoE — reasoning & tools' },
+  { value: 'accounts/fireworks/models/gpt-oss-120b', label: 'GPT-OSS 120B', provider: 'fireworks', description: 'OpenAI open-weight — fast, tools' },
 ];
 
 // Flagship by default — orchestration is most reliable on the strongest model.
@@ -133,9 +133,9 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
   'mistral-medium-latest': { input: 0.4, output: 2 },
   'magistral-medium-latest': { input: 2, output: 5 },
   'mistral-small-latest': { input: 0.1, output: 0.3 },
-  'accounts/fireworks/models/deepseek-v3p1': { input: 0.56, output: 1.68 },
-  'accounts/fireworks/models/llama-v3p3-70b-instruct': { input: 0.9, output: 0.9 },
-  'accounts/fireworks/models/qwen3-235b-a22b-instruct-2507': { input: 0.22, output: 0.88 },
+  'accounts/fireworks/models/deepseek-v4-pro': { input: 0.9, output: 0.9 },
+  'accounts/fireworks/models/kimi-k2p6': { input: 0.6, output: 2.5 },
+  'accounts/fireworks/models/gpt-oss-120b': { input: 0.15, output: 0.6 },
 };
 
 export interface TokenUsage {

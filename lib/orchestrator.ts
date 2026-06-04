@@ -6,6 +6,7 @@ import { Conversation } from './conversation';
 import { waitForInput } from './input-registry';
 import { DEFAULT_MODEL, estimateCost, formatCost, type OpenAIModel, type ProviderId } from './models';
 import { withProvider } from './provider';
+import { describeError } from './error-message';
 import type { AgentHooks, EventSink } from './agent-events';
 import * as log from './logger';
 
@@ -425,7 +426,7 @@ export class AgentOrchestrator {
                 }
 
             } catch (error) {
-                const errMsg = error instanceof Error ? error.message : String(error);
+                const errMsg = describeError(error);
                 log.error(`${this.currentAgent} failed: ${errMsg}`);
                 emit({ type: 'workflow_error', error: errMsg });
 

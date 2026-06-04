@@ -33,7 +33,7 @@ export default async function Landing() {
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
       {/* Top bar */}
-      <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5 2xl:max-w-7xl">
+      <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5 xl:max-w-6xl 2xl:max-w-7xl">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-900 text-white">
             <Sparkles className="h-4 w-4" />
@@ -124,7 +124,7 @@ export default async function Landing() {
       </section>
 
       {/* Patterns */}
-      <section id="patterns" className="mx-auto max-w-5xl px-6 pb-16 2xl:max-w-7xl">
+      <section id="patterns" className="mx-auto max-w-5xl px-6 pb-16 xl:max-w-6xl 2xl:max-w-7xl">
         <h2 className="mb-2 text-center text-2xl font-semibold tracking-tight">The nine architectures</h2>
         <p className="mb-6 text-center text-sm text-stone-500">Open any architecture for how it works, the agents, notes, and references.</p>
         <ArchitectureCards />

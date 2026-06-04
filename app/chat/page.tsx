@@ -572,7 +572,7 @@ export default function Home() {
       <main className="flex flex-1 flex-col overflow-hidden">
         {!hasMessages ? (
           <div className="flex flex-1 flex-col items-center overflow-y-auto px-4 py-10 [scrollbar-width:thin]">
-            <div className="w-full max-w-3xl xl:max-w-4xl 2xl:max-w-5xl">
+            <div className="w-full max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-6xl">
               <h1 className="mb-2 text-center text-3xl font-semibold tracking-tight text-stone-900">
                 {mode === 'v1' ? 'What should we research today?' : 'What should we build together?'}
               </h1>
@@ -615,7 +615,7 @@ export default function Home() {
               ref={scrollRef}
               className="flex-1 overflow-y-auto [scrollbar-width:thin]"
             >
-              <div className="mx-auto max-w-3xl xl:max-w-4xl 2xl:max-w-5xl px-4 py-6">
+              <div className="mx-auto max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-6xl px-4 py-6">
                 {messages.map((m, i) => (
                   <MessageRow
                     key={m.id}
@@ -652,7 +652,7 @@ export default function Home() {
               </div>
             </div>
             <div className="border-t border-stone-200 bg-white/70 px-4 py-3 backdrop-blur">
-              <div className="mx-auto max-w-3xl xl:max-w-4xl 2xl:max-w-5xl">
+              <div className="mx-auto max-w-3xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-6xl">
                 <InputArea
                   input={input}
                   setInput={setInput}

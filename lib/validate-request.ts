@@ -1,5 +1,6 @@
 import type { ConversationTurn } from './conversation';
 import type { ProviderId } from './models';
+import { asBackend, type Backend } from './backends';
 
 /**
  * Defensive bounds for the agent-run request body. The downstream
@@ -25,6 +26,8 @@ export interface AgentRunBody {
   history: ConversationTurn[];
   apiKey?: string;
   provider?: ProviderId;
+  /** Which execution backend runs this turn. Defaults to the in-app harness. */
+  backend: Backend;
 }
 
 export type ValidationResult =
@@ -88,5 +91,9 @@ export function validateAgentRunBody(raw: unknown): ValidationResult {
       ? (b.provider as ProviderId)
       : undefined;
 
-  return { ok: true, body: { message, model, history, apiKey, provider } };
+  // Backend is optional from older clients; coerce to a valid value (default
+  // 'current') rather than rejecting, so existing chats keep working.
+  const backend = asBackend(b.backend);
+
+  return { ok: true, body: { message, model, history, apiKey, provider, backend } };
 }

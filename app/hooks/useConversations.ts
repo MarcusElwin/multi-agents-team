@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Mode } from '@/lib/modes';
+import type { Backend } from '@/lib/backends';
 import type { RunSummary } from '@/lib/agent-events';
 import type { ReportSpec } from '@/lib/tools/report';
 
@@ -41,6 +42,8 @@ export interface StoredConversation {
   title: string;
   mode: Mode;
   model: string;
+  /** Execution backend this chat last ran on. Absent on older stored chats. */
+  backend?: Backend;
   messages: StoredMessage[];
   /** 'running' while a research/run is in flight for this chat. */
   status: ConversationStatus;
@@ -144,18 +147,19 @@ export function useConversations() {
       messages: StoredMessage[];
       mode: Mode;
       model: string;
+      backend: Backend;
       status: ConversationStatus;
       now: number;
       activate?: boolean;
     }): string => {
-      const { messages, mode, model, status, now, activate = true } = params;
+      const { messages, mode, model, backend, status, now, activate = true } = params;
       const id = params.id ?? activeId ?? crypto.randomUUID();
 
       setConversations((prev) => {
         if (prev.some((c) => c.id === id)) {
           return prev.map((c) =>
             c.id === id
-              ? { ...c, messages, mode, model, status, title: deriveTitle(messages), updatedAt: now }
+              ? { ...c, messages, mode, model, backend, status, title: deriveTitle(messages), updatedAt: now }
               : c,
           );
         }
@@ -164,6 +168,7 @@ export function useConversations() {
           title: deriveTitle(messages),
           mode,
           model,
+          backend,
           messages,
           status,
           createdAt: now,

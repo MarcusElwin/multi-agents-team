@@ -381,7 +381,11 @@ A built-in chat app at `/chat` (the landing page lives at `/`).
 - **Model selector** — models grouped by provider from `lib/models.ts`. The
   selected model applies to every agent in the run.
 - **Mode selector** — pick any of v1–v9, routing to `/api/agents` … `/api/agents-v9`.
-- **Settings** — enter/clear per-provider API keys (stored in your browser).
+- **Backend selector** — run a turn on the **in-app harness** (default) or the
+  **iii engine** (`lib/backends.ts`). Per-run here; the global default lives in
+  Settings. See [Backends](#backends-in-app-harness--iii-engine).
+- **Settings** — enter/clear per-provider API keys (stored in your browser), and
+  set the default execution backend.
 - **Architecture / Debug** — the per-mode diagram drawer and the live event stream.
 
 ### Conversation
@@ -431,6 +435,36 @@ curl -N -X POST http://localhost:3000/api/agents \
 Each run route also has a `GET` returning a small readiness/status object.
 
 ## Configuration
+
+### Backends: in-app harness ↔ iii engine
+
+Every run targets an **execution backend**, chosen per-run in the chat control
+row and defaulted globally in Settings (persisted in `localStorage`, threaded
+through the request body and validated in `lib/validate-request.ts`):
+
+| Backend | What runs the turn | Needs |
+| --- | --- | --- |
+| **In-app harness** (`current`, default) | The orchestrator/runners in `lib/` over the Vercel AI SDK, in-process. | Nothing — works out of the box. |
+| **iii engine** (`iii`) | The [iii](https://github.com/iii-hq/iii) engine: a separate process exposing a WebSocket bus of swappable workers (turn FSM, provider streaming, policy, budget, sessions, tracing). | A reachable engine; see env below. |
+
+When a run uses the `iii` backend, the route calls `runIiiBackend`
+(`lib/iii/run-iii.ts`), which connects with `iii-sdk`, submits the turn to the
+engine's orchestrator entrypoint, and bridges its event plane back into this
+app's `AgentEvent` SSE stream — so the existing chat UI renders it unchanged. If
+the engine isn't reachable it fails closed with a clear message, and the in-app
+harness is unaffected.
+
+```bash
+# Server-side iii config (all optional; only used by the `iii` backend)
+III_ENGINE_URL=ws://localhost:49134        # engine WebSocket address
+III_TURN_FUNCTION_ID=turn-orchestrator::run # orchestrator entrypoint function id
+III_TURN_TIMEOUT_MS=240000                  # per-turn timeout
+NEXT_PUBLIC_III_BACKEND_ENABLED=true        # drop the "preview" hint in the UI
+```
+
+This is the first step of the [iii migration](https://github.com/MarcusElwin/multi-agents-team/issues/10):
+the toggle and integration seam land now; porting each pattern to native iii
+workers is the follow-up.
 
 ### Models, providers & cost — `lib/models.ts`
 

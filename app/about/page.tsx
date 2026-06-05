@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, Code2, Sparkles } from 'lucide-react';
+import { ArticleAnalytics } from '@/app/components/ArticleAnalytics';
 
 const REPO_URL = 'https://github.com/MarcusElwin/multi-agents-team';
 
@@ -12,6 +13,7 @@ export const metadata = {
 export default function AboutPage() {
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
+      <ArticleAnalytics article="about" title="About this project" />
       <header className="mx-auto flex max-w-3xl items-center justify-between px-6 py-5">
         <Link href="/" className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-900 text-white">

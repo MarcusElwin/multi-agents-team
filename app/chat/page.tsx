@@ -23,6 +23,13 @@ import { SettingsDrawer } from '@/app/components/SettingsDrawer';
 import { extractCodeBlocks, type CodeBlock } from '@/lib/utils/extract-code';
 import { useConversations, type StoredMessage } from '@/app/hooks/useConversations';
 import { useSettings } from '@/app/hooks/useSettings';
+import { usePageSession } from '@/app/hooks/usePageSession';
+import {
+  trackChatOpened,
+  trackChatClosed,
+  trackPromptSubmitted,
+  trackWorkflowCompleted,
+} from '@/lib/analytics';
 import type { AgentEvent } from '@/lib/agent-events';
 
 // The on-screen message shape is exactly what we persist, so reuse it to keep
@@ -80,6 +87,10 @@ export default function Home() {
   };
   const [now, setNow] = useState(Date.now());
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Track the chat session: fire chat_opened on mount and chat_closed with the
+  // active seconds when the user leaves or hides the tab.
+  usePageSession(trackChatOpened, (seconds) => trackChatClosed({ seconds }));
 
   const {
     conversations,
@@ -346,6 +357,12 @@ export default function Home() {
     setLiveRunId(runId);
     markRunning(runId, true);
 
+    // Analytics: prompt submitted + wall-clock duration for long-running/expensive
+    // workflow detection on completion.
+    const provider = providerForModel(model);
+    const startedAt = Date.now();
+    trackPromptSubmitted({ mode, model, provider, promptLength: trimmed.length });
+
     const endpoint = MODES[mode].endpoint;
     // Prior turns become the agents' memory. Snapshot before appending this turn.
     const history = priorMessages.map((m) => ({ role: m.role, content: m.content }));
@@ -369,8 +386,8 @@ export default function Home() {
           model,
           history,
           // BYO key: send the user's key for this model's provider, if set.
-          provider: providerForModel(model),
-          apiKey: settings.apiKeys[providerForModel(model)],
+          provider,
+          apiKey: settings.apiKeys[provider],
         }),
         signal: controller.signal,
       });
@@ -420,6 +437,16 @@ export default function Home() {
       updateConversation(runId, { messages: updated, status: 'idle', updatedAt: Date.now() });
       // Only touch the visible transcript if we're still viewing this chat.
       if (viewedIdRef.current === runId) setMessages(updated);
+
+      trackWorkflowCompleted({
+        mode,
+        model,
+        provider,
+        durationSeconds: Math.round((Date.now() - startedAt) / 1000),
+        costUsd: finalEvent?.totalCostUsd ?? 0,
+        iterations: finalEvent?.iterations,
+        status: 'success',
+      });
     } catch (e) {
       if (controller.signal.aborted) return; // deliberate cancel (e.g. delete)
       const err = e instanceof Error ? e.message : 'Unknown error';
@@ -431,6 +458,15 @@ export default function Home() {
       const updated = [...withUser, errorMsg];
       updateConversation(runId, { messages: updated, status: 'error', updatedAt: Date.now() });
       if (viewedIdRef.current === runId) setMessages(updated);
+
+      trackWorkflowCompleted({
+        mode,
+        model,
+        provider,
+        durationSeconds: Math.round((Date.now() - startedAt) / 1000),
+        costUsd: 0,
+        status: 'error',
+      });
     } finally {
       runsRef.current.delete(runId);
       markRunning(runId, false);

@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowUpRight, Sparkles, FileText } from 'lucide-react';
 import { REFERENCE_SECTIONS, type RefType, logoFor, DARK_LOGOS } from '@/lib/references';
 import { MODE_LIST } from '@/lib/modes';
 import { ExportReport } from '@/app/components/ExportReport';
+import { ArticleAnalytics } from '@/app/components/ArticleAnalytics';
 
 /** A source logo (local SVG) in a tile — dark tile for white-art logos. */
 function SourceLogo({ source, url }: { source: string; url: string }) {
@@ -78,6 +79,7 @@ export default function ReferencesPage() {
 
   return (
     <main className="min-h-screen bg-stone-50 text-stone-900">
+      <ArticleAnalytics article="references" title="References — reading list" />
       <header className="mx-auto flex max-w-3xl items-center justify-between px-6 py-5">
         <Link href="/" className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-900 text-white">

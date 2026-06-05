@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { X, KeyRound, Eye, EyeOff, Check, ExternalLink, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { PROVIDER_LIST, type ProviderId } from '@/lib/models';
+import { trackApiKeyConfigured } from '@/lib/analytics';
 
 /** True when this deployment requires visitors to bring their own key. */
 export const BYO_KEY_ONLY = process.env.NEXT_PUBLIC_BYO_KEY_ONLY === 'true';
@@ -112,7 +113,14 @@ function KeyField({
   const dirty = draft.trim() !== value.trim();
 
   const save = () => {
-    onSave(draft.trim());
+    const next = draft.trim();
+    onSave(next);
+    // Record only the provider + whether a key was set or removed — never the key.
+    trackApiKeyConfigured({
+      provider: providerId,
+      label,
+      action: next ? 'configured' : 'cleared',
+    });
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
@@ -168,7 +176,11 @@ function KeyField({
         {value && (
           <button
             type="button"
-            onClick={() => { onClear(); setDraft(''); }}
+            onClick={() => {
+              onClear();
+              setDraft('');
+              trackApiKeyConfigured({ provider: providerId, label, action: 'cleared' });
+            }}
             className="text-[11px] font-medium text-stone-400 hover:text-red-600"
           >
             Clear

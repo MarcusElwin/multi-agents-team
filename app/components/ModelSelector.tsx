@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Check, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { MODEL_OPTIONS, PROVIDER_LIST, type OpenAIModel } from '@/lib/models';
+import { trackModelSelected } from '@/lib/analytics';
 
 export function ModelSelector({
   value,
@@ -63,6 +64,13 @@ export function ModelSelector({
                       key={opt.value}
                       type="button"
                       onClick={() => {
+                        if (opt.value !== value) {
+                          trackModelSelected({
+                            model: opt.value,
+                            label: opt.label,
+                            provider: opt.provider,
+                          });
+                        }
                         onChange(opt.value);
                         setOpen(false);
                       }}

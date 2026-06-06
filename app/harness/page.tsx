@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, Cpu, Network, Check, Sparkles } from 'lucide-react';
 import { ArticleAnalytics } from '@/app/components/ArticleAnalytics';
+import { SiteFooter } from '@/app/components/SiteFooter';
 
 const REPO_URL = 'https://github.com/MarcusElwin/multi-agents-team';
 const ISSUE_URL = `${REPO_URL}/issues/10`;
@@ -259,12 +260,7 @@ export default function HarnessPage() {
         </div>
       </div>
 
-      <footer className="border-t border-stone-200 py-8 text-center text-xs text-stone-400">
-        Made with <span className="text-red-400">♥</span> in Stockholm by{' '}
-        <a href="https://umai-tech.com" target="_blank" rel="noopener noreferrer" className="font-medium text-stone-500 hover:text-stone-900 hover:underline">
-          Marcus Elwin @ UmaiTech
-        </a>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

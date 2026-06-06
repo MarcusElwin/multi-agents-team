@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ArrowRight, Code2, KeyRound, Sparkles, Star, GitFork } from 'lucide-react';
 import { ArchitectureCards } from './components/ArchitectureCards';
 import { AgentFlow } from './components/AgentFlow';
+import { SiteFooter } from './components/SiteFooter';
 
 export const metadata = {
   title: 'Multi-Agent Team — nine ways to coordinate LLM agents',
@@ -148,18 +149,7 @@ export default async function Landing() {
         </Link>
       </section>
 
-      <footer className="border-t border-stone-200 py-8 text-center text-xs text-stone-400">
-        Made with <span className="text-red-400">♥</span> in Stockholm by{' '}
-        <a
-          href="https://umai-tech.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-medium text-stone-500 underline-offset-2 hover:text-stone-900 hover:underline"
-        >
-          Marcus Elwin @ UmaiTech
-        </a>
-        {' · '}MIT
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

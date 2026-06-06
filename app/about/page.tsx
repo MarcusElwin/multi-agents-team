@@ -23,10 +23,10 @@ export default function AboutPage() {
           <span className="text-sm font-semibold">Multi-Agent Team</span>
         </Link>
         <div className="flex items-center gap-3">
-          <Link href="/references" className="text-sm text-stone-500 hover:text-stone-900">
+          <Link href="/references" className="hidden text-sm text-stone-500 hover:text-stone-900 sm:inline">
             References
           </Link>
-          <Link href="/harness" className="text-sm text-stone-500 hover:text-stone-900">
+          <Link href="/harness" className="hidden text-sm text-stone-500 hover:text-stone-900 sm:inline">
             Harness
           </Link>
           <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-stone-900">

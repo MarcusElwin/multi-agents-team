@@ -25,6 +25,9 @@ export default function AboutPage() {
           <Link href="/references" className="text-sm text-stone-500 hover:text-stone-900">
             References
           </Link>
+          <Link href="/harness" className="text-sm text-stone-500 hover:text-stone-900">
+            Harness
+          </Link>
           <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-stone-900">
             <ArrowLeft className="h-3.5 w-3.5" /> Back
           </Link>

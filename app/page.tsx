@@ -47,6 +47,9 @@ export default async function Landing() {
           <Link href="/references" className="hidden text-sm text-stone-500 hover:text-stone-900 sm:inline">
             References
           </Link>
+          <Link href="/harness" className="hidden text-sm text-stone-500 hover:text-stone-900 sm:inline">
+            Harness
+          </Link>
           <a
             href={REPO_URL}
             target="_blank"

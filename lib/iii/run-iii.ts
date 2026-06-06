@@ -6,13 +6,12 @@ import {
   iiiEngineHttpUrl,
   iiiEngineToken,
   iiiRunPath,
-  iiiStreamEnabled,
   iiiStreamGroup,
   iiiStreamReadPath,
   iiiStreamUrl,
   iiiTurnTimeoutMs,
 } from './config';
-import { readEngineStream } from './stream-read';
+import { parseSSEStream, readEngineStream } from './stream-read';
 
 /**
  * Adapter that runs a turn on the iii engine instead of the in-app harness.
@@ -151,19 +150,29 @@ export async function runIiiBackend(ctx: IiiRunContext): Promise<void> {
       return;
     }
 
+    // Default live path: the worker streams SSE over the (channel-backed) HTTP
+    // response. Forward each event as it lands — no second endpoint involved.
+    const contentType = res.headers.get('content-type') ?? '';
+    if (contentType.includes('text/event-stream') && res.body) {
+      for await (const item of parseSSEStream(res.body, controller.signal)) {
+        const event = translateIiiEvent(item);
+        if (!event || event.type === 'workflow_start') continue; // we emitted our own start
+        send(event);
+        if (event.type === 'workflow_complete' || event.type === 'workflow_error') return;
+      }
+      send({ type: 'workflow_error', error: 'iii stream ended before the run completed.' });
+      return;
+    }
+
     const data = (await res.json()) as IiiTurnResponse;
     if (data?.error) {
       send({ type: 'workflow_error', error: `iii engine: ${data.error}` });
       return;
     }
 
-    // Live path: subscribe to the run's stream and forward events as they land.
-    if (iiiStreamEnabled()) {
-      const streamName = data.streamName ?? (data.runId ? `mat:run:${data.runId}` : undefined);
-      if (!streamName) {
-        send({ type: 'workflow_error', error: 'iii streaming is enabled but the engine returned no stream name.' });
-        return;
-      }
+    // Queue path: the run was enqueued; read its events from the named stream.
+    if (data.queued && (data.streamName || data.runId)) {
+      const streamName = data.streamName ?? `mat:run:${data.runId}`;
       const group = data.group ?? iiiStreamGroup();
       for await (const item of readEngineStream({
         baseUrl: iiiStreamUrl(),
@@ -174,7 +183,7 @@ export async function runIiiBackend(ctx: IiiRunContext): Promise<void> {
         signal: controller.signal,
       })) {
         const event = translateIiiEvent(item);
-        if (!event || event.type === 'workflow_start') continue; // we emitted our own start
+        if (!event || event.type === 'workflow_start') continue;
         send(event);
         if (event.type === 'workflow_complete' || event.type === 'workflow_error') return;
       }
@@ -182,7 +191,7 @@ export async function runIiiBackend(ctx: IiiRunContext): Promise<void> {
       return;
     }
 
-    // Batch path: replay the worker's events, then synthesize completion.
+    // Legacy batch fallback: replay the worker's events, then synthesize completion.
     if (Array.isArray(data.events)) {
       for (const item of data.events) {
         const event = translateIiiEvent(item);

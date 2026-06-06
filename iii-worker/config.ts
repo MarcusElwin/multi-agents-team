@@ -39,4 +39,11 @@ export const cfg = {
   // harness policy: gate tools via policy::check_permissions.
   policyEnabled: flag('III_POLICY_ENABLED'),
   policyFn: env('III_POLICY_FN') || 'policy::check_permissions',
+
+  // Channels: hand a large final artifact to a sink worker over a channel,
+  // instead of inlining it. The sink id can point at a dedicated render/store
+  // worker; with one worker it round-trips to a co-registered ack function.
+  artifactChannelEnabled: flag('III_ARTIFACT_CHANNEL_ENABLED'),
+  artifactThresholdBytes: Number(env('III_ARTIFACT_THRESHOLD_BYTES')) || 16_384,
+  artifactSinkFn: env('MAT_ARTIFACT_FUNCTION_ID') || 'mat::artifact',
 } as const;

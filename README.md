@@ -499,27 +499,36 @@ BYO keys take one extra hop to the engine on this path — see `SECURITY.md` §2
 
 ### Adopting iii's prebuilt workers
 
-The worker keeps our `lib/` runners but can lean on iii's [registry
-workers](https://workers.iii.dev/) for the cross-cutting harness jobs. Each is
-**off by default** (the batch HTTP path stays the verified default) and turns on
-with one env flag — set the same flag on the worker (Fly secret) and, where
-noted, on the app (Vercel):
+The worker keeps our `lib/` runners but exercises all four iii primitives —
+**functions, triggers, channels, streams** — leaning on iii's [registry
+workers](https://workers.iii.dev/) for the cross-cutting harness jobs.
 
-| Capability | Worker | What it does | Flag |
+**Live events ride a channel.** `mat::run` is registered with iii's `http`
+helper, whose HTTP response *is* a channel — so the worker streams SSE events
+over the same `POST /run` connection (the app reads them exactly like the in-app
+SSE). No separate read endpoint, so there's nothing to "verify" for the default
+live path. Worker↔worker **channels** also back the optional artifact handoff.
+
+Each integration below is **off by default** and turns on with one env flag —
+set it on the worker (Fly secret) and, where noted, the app (Vercel):
+
+| Capability | Primitive | What it does | Flag |
 | --- | --- | --- | --- |
-| **iii-stream** | `iii-worker/stream.ts` + app `lib/iii/stream-read.ts` | Publishes run events live; the app reads them from the engine Stream API instead of a batched result — restores the live timeline. | `III_STREAM_ENABLED` (app+worker) |
-| **iii-state** | `iii-worker/state.ts` | Server-side session history keyed by `conversationId`, replacing localStorage-only history. | `III_STATE_ENABLED` (worker) |
-| **iii-queue** | `iii-worker/index.ts` | Enqueues the turn so it outlives the HTTP request (durable long runs; fixes the [HITL timeout](https://github.com/MarcusElwin/multi-agents-team/issues/22)). | `III_QUEUE_ENABLED` (worker) |
-| **harness policy** | `iii-worker/policy.ts` + `lib/iii/policy-context.ts` + `iii-permissions.yaml` | Gates tools (today `web_search`) through `policy::check_permissions` before they run — fail-closed. | `III_POLICY_ENABLED` (worker) |
+| **live streaming** | channel (HTTP response) | Always on for inline runs — events stream over the response. | _(default)_ |
+| **iii-stream** | stream | Also publish events to a named stream for persistence / multiple subscribers / the queue path. | `III_STREAM_ENABLED` |
+| **iii-state** | function | Server-side session history keyed by `conversationId`, replacing localStorage-only history. | `III_STATE_ENABLED` |
+| **iii-queue** | trigger | Enqueue the turn so it outlives the HTTP request (durable long runs; fixes the [HITL timeout](https://github.com/MarcusElwin/multi-agents-team/issues/22)). Returns JSON; app reads the named stream. | `III_QUEUE_ENABLED` (+stream) |
+| **harness policy** | function | Gate tools (today `web_search`) through `policy::check_permissions` before they run — fail-closed. | `III_POLICY_ENABLED` |
+| **artifact channel** | channel | Hand a large final result to a sink worker over a channel instead of inlining it (`iii-worker/artifact.ts`). | `III_ARTIFACT_CHANNEL_ENABLED` |
 
 The policy gate uses an `AsyncLocalStorage` context (`lib/iii/policy-context.ts`),
 so shared tools stay provider-agnostic — it's a no-op on the in-app backend.
 
-> **Verify against a live engine.** The engine-specific function ids, the Stream
-> API read path, and the policy/state payload shapes are all env-configurable and
-> marked `VERIFY (live engine)` in the worker source — confirm them on your first
-> deploy and adjust the env (no code change needed). See the full env list in
-> [`.env.example`](.env.example).
+> **Verify against a live engine.** Only the *optional* paths carry engine
+> unknowns — the named-stream read (queue path), and the policy/state/artifact
+> payload shapes. All are env-configurable and marked `VERIFY (live engine)` in
+> the worker source; the default channel-streamed path has none. See the full env
+> list in [`.env.example`](.env.example).
 
 ### Models, providers & cost — `lib/models.ts`
 

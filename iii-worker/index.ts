@@ -1,20 +1,24 @@
 /**
  * MAT worker — the engine-side half of the iii backend.
  *
- * Connects to the iii engine bus and exposes one agent turn over HTTP. The turn
- * runs this repo's existing `lib/` runners (the runners own their own
- * `withProvider` scope, so this drives them exactly like the Next API routes).
+ * Connects to the iii engine bus and serves one agent turn over HTTP. The turn
+ * runs this repo's existing `lib/` runners (which own their own `withProvider`
+ * scope, so this drives them exactly like the Next API routes).
  *
- * Adopts iii's prebuilt workers, each behind a flag in `config.ts` (all OFF by
- * default — the batch HTTP path is the verified default):
- *   - iii-queue   — enqueue the turn so it outlives the HTTP request.
- *   - iii-stream  — publish events live for the app to subscribe to.
- *   - iii-state   — load/save session history server-side.
- *   - harness     — gate tools via policy::check_permissions.
+ * iii primitives in use:
+ *   - functions — `mat::run`, `mat::execute`, `mat::artifact`, plus calls to
+ *     `state::*`, `stream::publish`, `policy::check_permissions`.
+ *   - triggers  — the HTTP trigger (POST /run) and the queue trigger (Enqueue).
+ *   - channels  — the HTTP response is a channel; `mat::run` streams SSE over it
+ *     live (no separate read endpoint). Plus optional worker↔worker artifact
+ *     handoff (`artifact.ts`).
+ *   - streams   — optional named iii-stream publish for persistence / the queue
+ *     path / multiple subscribers.
  *
- * Run with `pnpm worker` (alongside a running engine) or the repo Docker image.
+ * Each prebuilt-worker integration is behind a flag in `config.ts`, off by
+ * default. Run with `pnpm worker` or the repo Docker image.
  */
-import { registerWorker, TriggerAction, type ISdk, type RegisterTriggerInput } from 'iii-sdk';
+import { registerWorker, http, TriggerAction, type ISdk, type ApiResponse, type RegisterTriggerInput } from 'iii-sdk';
 import type { AgentEvent } from '@/lib/agent-events';
 import type { ConversationTurn } from '@/lib/conversation';
 import { withPolicy } from '@/lib/iii/policy-context';
@@ -23,6 +27,7 @@ import { runMode, type TurnRequest } from './run';
 import { makePolicyChecker } from './policy';
 import { loadSession, saveSession } from './state';
 import { publishEvent, streamNameFor } from './stream';
+import { offloadArtifact, readArtifact } from './artifact';
 
 function findComplete(events: AgentEvent[]) {
   return [...events]
@@ -30,36 +35,58 @@ function findComplete(events: AgentEvent[]) {
     .find((e): e is Extract<AgentEvent, { type: 'workflow_complete' }> => e.type === 'workflow_complete');
 }
 
-/** Run a turn end-to-end: state in, run (policy-gated), stream out, state back. */
-async function executeTurn(iii: ISdk, req: TurnRequest, runId: string) {
+function apiJson(status_code: number, body: Record<string, unknown>): ApiResponse {
+  return { status_code, headers: { 'content-type': 'application/json' }, body };
+}
+
+function bearer(headers: Record<string, string | string[]>): string | undefined {
+  const raw = headers['authorization'] ?? headers['Authorization'];
+  const val = Array.isArray(raw) ? raw[0] : raw;
+  return val?.replace(/^Bearer\s+/i, '');
+}
+
+/**
+ * Run a turn end-to-end: session in (iii-state), run (policy-gated), events out
+ * via `send` (live), session back, optional artifact handoff. Returns a summary
+ * for callers that don't stream (the queue path).
+ */
+async function runTurn(iii: ISdk, req: TurnRequest, runId: string, send: (e: AgentEvent) => void) {
   const policy = cfg.policyEnabled ? makePolicyChecker(iii) : null;
 
-  // Prefer server-side session history (iii-state) over client-sent history.
   const stored = await loadSession(iii, req.conversationId);
   const history = stored ?? req.history ?? [];
 
   const events: AgentEvent[] = [];
-  const send = (e: AgentEvent) => {
+  const emit = (e: AgentEvent) => {
     events.push(e);
-    void publishEvent(iii, runId, e); // live (no-op unless streaming)
+    send(e);
   };
 
   try {
-    const run = () => runMode(req, history, send);
+    const run = () => runMode(req, history, emit);
     await (policy ? withPolicy(policy, run) : run());
   } catch (err) {
-    send({ type: 'workflow_error', error: err instanceof Error ? err.message : String(err) });
+    emit({ type: 'workflow_error', error: err instanceof Error ? err.message : String(err) });
   }
 
   const complete = findComplete(events);
 
-  // Persist the updated session (best-effort, no-op unless state enabled).
   if (complete?.result) {
     await saveSession(iii, req.conversationId, [
       ...history,
       { role: 'user', content: req.message },
       { role: 'assistant', content: complete.result },
     ] as ConversationTurn[]);
+
+    // Large artifact → hand off over a channel instead of inlining it.
+    if (cfg.artifactChannelEnabled && Buffer.byteLength(complete.result, 'utf8') >= cfg.artifactThresholdBytes) {
+      try {
+        const { ref, bytes } = await offloadArtifact(iii, complete.result);
+        await iii.trigger({ function_id: cfg.artifactSinkFn, payload: { ref, meta: { runId, conversationId: req.conversationId, bytes } } });
+      } catch (err) {
+        console.warn('[mat-worker] artifact handoff failed:', err instanceof Error ? err.message : err);
+      }
+    }
   }
 
   return {
@@ -72,38 +99,72 @@ async function executeTurn(iii: ISdk, req: TurnRequest, runId: string) {
     totalInputTokens: complete?.totalInputTokens,
     totalOutputTokens: complete?.totalOutputTokens,
     totalCostUsd: complete?.totalCostUsd,
-    events,
   };
 }
 
 async function main() {
   const iii = registerWorker(cfg.engineUrl, { workerName: 'mat-worker' });
 
-  // HTTP entrypoint: authorize, mint a run id, then enqueue (durable) or run
-  // inline. Either way the response carries the stream the app can read live.
-  iii.registerFunction(cfg.runFn, async (payload: unknown) => {
-    const req = (payload ?? {}) as TurnRequest;
-    if (cfg.token && req.auth_token !== cfg.token) return { error: 'unauthorized' };
-    if (!req.message || !req.mode) return { error: 'mode and message are required' };
+  // HTTP entrypoint. The response is a channel: when running inline we stream
+  // SSE events over it live; when queued we return JSON and the app reads the
+  // named stream instead.
+  iii.registerFunction(
+    cfg.runFn,
+    http(async (req, res): Promise<void | ApiResponse> => {
+      const body = (req.body ?? {}) as TurnRequest;
+      const token = body.auth_token ?? bearer(req.headers);
+      if (cfg.token && token !== cfg.token) return apiJson(401, { error: 'unauthorized' });
+      if (!body.message || !body.mode) return apiJson(400, { error: 'mode and message are required' });
 
-    const runId = crypto.randomUUID();
+      const runId = crypto.randomUUID();
 
-    if (cfg.queueEnabled) {
-      void iii.trigger({
-        function_id: cfg.executeFn,
-        payload: { ...req, runId },
-        action: TriggerAction.Enqueue({ queue: cfg.queueName }),
+      if (cfg.queueEnabled) {
+        void iii.trigger({
+          function_id: cfg.executeFn,
+          payload: { ...body, runId },
+          action: TriggerAction.Enqueue({ queue: cfg.queueName }),
+        });
+        return apiJson(200, { runId, streamName: streamNameFor(runId), group: cfg.streamGroup, queued: true });
+      }
+
+      // Live SSE over the channel-backed HTTP response.
+      res.status(200);
+      res.headers({
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache, no-transform',
+        'x-accel-buffering': 'no',
       });
-      return { runId, streamName: streamNameFor(runId), group: cfg.streamGroup, queued: true };
-    }
+      const send = (e: AgentEvent) => {
+        try {
+          res.stream.write(`data: ${JSON.stringify(e)}\n\n`);
+        } catch {
+          // client gone
+        }
+        if (cfg.streamEnabled) void publishEvent(iii, runId, e); // optional persistence/fanout
+      };
+      await runTurn(iii, body, runId, send);
+      try {
+        res.close();
+      } catch {
+        // already closed
+      }
+    }),
+  );
 
-    return executeTurn(iii, req, runId);
-  });
-
-  // Queue target: runs the turn out-of-band; results land on the stream.
+  // Queue target: runs the turn out-of-band; events go to the named stream.
   iii.registerFunction(cfg.executeFn, async (payload: unknown) => {
     const req = (payload ?? {}) as TurnRequest & { runId?: string };
-    return executeTurn(iii, req, req.runId || crypto.randomUUID());
+    const runId = req.runId || crypto.randomUUID();
+    return runTurn(iii, req, runId, (e) => void publishEvent(iii, runId, e));
+  });
+
+  // Artifact sink: drains a channel handed off by a run. In a real deployment
+  // this id points at a dedicated render/store worker; here it acks the bytes.
+  iii.registerFunction(cfg.artifactSinkFn, async (payload: unknown) => {
+    const { ref } = (payload ?? {}) as { ref?: Parameters<typeof readArtifact>[0] };
+    if (!ref) return { received: false, error: 'missing ref' };
+    const content = await readArtifact(ref);
+    return { received: true, bytes: Buffer.byteLength(content, 'utf8') };
   });
 
   iii.registerTrigger({
@@ -114,9 +175,9 @@ async function main() {
 
   const on = (b: boolean) => (b ? 'on' : 'off');
   console.log(`[mat-worker] connected to ${cfg.engineUrl}`);
-  console.log(`[mat-worker] ${cfg.runFn} · POST ${cfg.runPath}${cfg.token ? ' (token required)' : ''}`);
+  console.log(`[mat-worker] ${cfg.runFn} · POST ${cfg.runPath}${cfg.token ? ' (token required)' : ''} · live SSE over channel`);
   console.log(
-    `[mat-worker] queue=${on(cfg.queueEnabled)} stream=${on(cfg.streamEnabled)} state=${on(cfg.stateEnabled)} policy=${on(cfg.policyEnabled)}`,
+    `[mat-worker] queue=${on(cfg.queueEnabled)} stream=${on(cfg.streamEnabled)} state=${on(cfg.stateEnabled)} policy=${on(cfg.policyEnabled)} artifactChannel=${on(cfg.artifactChannelEnabled)}`,
   );
 
   const shutdown = async () => {

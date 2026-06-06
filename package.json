@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test:agents": "tsx scripts/test-agents.ts",
     "test:runner": "tsx scripts/test-runner.ts",
-    "test:smoke": "tsx scripts/smoke-test.ts"
+    "test:smoke": "tsx scripts/smoke-test.ts",
+    "worker": "tsx iii-worker/index.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.80",

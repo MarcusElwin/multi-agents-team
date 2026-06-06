@@ -448,23 +448,54 @@ through the request body and validated in `lib/validate-request.ts`):
 | **iii engine** (`iii`) | The [iii](https://github.com/iii-hq/iii) engine: a separate process exposing a WebSocket bus of swappable workers (turn FSM, provider streaming, policy, budget, sessions, tracing). | A reachable engine; see env below. |
 
 When a run uses the `iii` backend, the route calls `runIiiBackend`
-(`lib/iii/run-iii.ts`), which connects with `iii-sdk`, submits the turn to the
-engine's orchestrator entrypoint, and bridges its event plane back into this
-app's `AgentEvent` SSE stream — so the existing chat UI renders it unchanged. If
-the engine isn't reachable it fails closed with a clear message, and the in-app
-harness is unaffected.
+(`lib/iii/run-iii.ts`), which **POSTs the turn to the engine over HTTPS** and
+replays the returned events into this app's `AgentEvent` stream — so the existing
+chat UI renders it unchanged. On the engine side, our worker (`iii-worker/`)
+registers a `mat::run` function (which drives the **same `lib/` runners** as the
+in-app path) plus a `POST /run` HTTP trigger. If the engine isn't configured or
+reachable, the run fails closed with a clear message and the in-app harness is
+unaffected.
 
 ```bash
-# Server-side iii config (all optional; only used by the `iii` backend)
-III_ENGINE_URL=ws://localhost:49134        # engine WebSocket address
-III_TURN_FUNCTION_ID=turn-orchestrator::run # orchestrator entrypoint function id
-III_TURN_TIMEOUT_MS=240000                  # per-turn timeout
-NEXT_PUBLIC_III_BACKEND_ENABLED=true        # drop the "preview" hint in the UI
+# App side (set where the Next app runs, e.g. Vercel) — only the `iii` backend uses these
+III_ENGINE_HTTP_URL=https://mat-iii-engine.fly.dev  # engine HTTP endpoint
+III_ENGINE_TOKEN=<shared-secret>                    # authorizes a run (Bearer)
+III_RUN_PATH=/run                                   # worker's trigger path
+III_TURN_TIMEOUT_MS=240000                          # per-turn timeout
+NEXT_PUBLIC_III_BACKEND_ENABLED=true                # drop the "preview" hint in the UI
 ```
 
 This is the first step of the [iii migration](https://github.com/MarcusElwin/multi-agents-team/issues/10):
-the toggle and integration seam land now; porting each pattern to native iii
-workers is the follow-up.
+the toggle, the worker, and the integration seam land now; adopting iii's native
+policy/budget/session workers per pattern is the follow-up.
+
+### Deploy the iii engine (Fly.io)
+
+The engine is a long-running process, so it lives **off** Vercel. This repo ships
+a `Dockerfile` (engine `iiidev/iii` + the `iii-worker/`), `fly.toml`, and
+`docker-entrypoint.sh` to run both in one machine — the worker connects to the
+engine on `ws://localhost:49134` and the engine serves HTTP on `:3111`.
+
+```bash
+# 1. Create the Fly app (keeps the bundled fly.toml)
+fly launch --no-deploy
+
+# 2. Set a shared secret (and optionally server-side provider keys for non-BYO)
+fly secrets set III_ENGINE_TOKEN=$(openssl rand -hex 32)
+# fly secrets set OPENAI_API_KEY=...   # optional: engine's own keys
+
+# 3. Deploy
+fly deploy
+
+# 4. Point the Next app at it (Vercel env), using the SAME token:
+#    III_ENGINE_HTTP_URL=https://<app>.fly.dev
+#    III_ENGINE_TOKEN=<same secret>
+#    NEXT_PUBLIC_III_BACKEND_ENABLED=true
+```
+
+Locally you can run the engine (`iii --use-default-config`) and the worker
+(`pnpm worker`) in two terminals, with `III_ENGINE_HTTP_URL=http://localhost:3111`.
+BYO keys take one extra hop to the engine on this path — see `SECURITY.md` §2.
 
 ### Models, providers & cost — `lib/models.ts`
 

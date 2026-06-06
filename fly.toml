@@ -1,0 +1,23 @@
+# Fly.io app for the iii engine + MAT worker. Deploy from the repo root:
+#   fly launch --no-deploy        # once, to create the app (keep this file)
+#   fly secrets set III_ENGINE_TOKEN=$(openssl rand -hex 32)
+#   fly deploy
+# Then set III_ENGINE_HTTP_URL=https://<app>.fly.dev and the same token in Vercel.
+app = "mat-iii-engine"
+primary_region = "arn" # pick a region near your Vercel functions
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Only the engine's HTTP API (3111) is public; the worker bus (49134) stays
+# inside the machine. force_https makes the public endpoint wss/https only.
+[http_service]
+  internal_port = 3111
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

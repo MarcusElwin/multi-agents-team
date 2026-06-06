@@ -1,26 +1,25 @@
 /**
- * Server-side configuration for the iii engine backend. All values are read
- * from the environment so a deploy can point at whatever engine it runs without
- * code changes. The exact orchestrator function id + payload contract is engine
- * specific (see issue #10, Phase 0/1) — hence env-configurable rather than
- * hardcoded.
+ * Client-side configuration for talking to the iii engine over HTTP. The app
+ * (on Vercel) POSTs each turn to the engine's HTTP trigger; the engine routes
+ * it to our worker, which runs the agent loop and returns the result. All values
+ * come from the environment so a deploy points at its own engine without code
+ * changes. See the deploy guide in README and `iii-worker/` for the other side.
  */
 
-/** Default engine WebSocket address, per the iii SDK. */
-export const III_DEFAULT_ENGINE_URL = 'ws://localhost:49134';
-
-/** WebSocket URL of the iii engine the app submits runs to. */
-export function iiiEngineUrl(): string {
-  return process.env.III_ENGINE_URL?.trim() || III_DEFAULT_ENGINE_URL;
+/** Base HTTPS URL of the engine's HTTP API (the iii-http worker, default :3111). */
+export function iiiEngineHttpUrl(): string {
+  return process.env.III_ENGINE_HTTP_URL?.trim() ?? '';
 }
 
-/**
- * function_id of the turn-orchestrator entrypoint a run is submitted to. The
- * engine's default harness exposes a turn-orchestrator worker; the precise id
- * is pinned per deployment.
- */
-export function iiiTurnFunctionId(): string {
-  return process.env.III_TURN_FUNCTION_ID?.trim() || 'turn-orchestrator::run';
+/** Path the worker registers its turn HTTP trigger on. */
+export function iiiRunPath(): string {
+  const p = process.env.III_RUN_PATH?.trim() || '/run';
+  return p.startsWith('/') ? p : `/${p}`;
+}
+
+/** Shared secret sent as a Bearer token (and body field) to authorize a run. */
+export function iiiEngineToken(): string | undefined {
+  return process.env.III_ENGINE_TOKEN?.trim() || undefined;
 }
 
 /** Timeout (ms) for a submitted turn. Agent runs are long; default 4 min. */
@@ -29,11 +28,7 @@ export function iiiTurnTimeoutMs(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : 240_000;
 }
 
-/**
- * Whether an engine URL has been explicitly configured on the server. When
- * false we still attempt the default localhost address (useful for local dev),
- * but this lets callers reason about intent.
- */
+/** Whether an engine endpoint has been configured on the server. */
 export function isIiiConfigured(): boolean {
-  return Boolean(process.env.III_ENGINE_URL?.trim());
+  return Boolean(iiiEngineHttpUrl());
 }

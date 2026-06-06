@@ -1,143 +1,123 @@
 /**
  * MAT worker — the engine-side half of the iii backend.
  *
- * Connects to the iii engine over its WebSocket bus, registers a `mat::run`
- * function that runs one agent turn using this repo's existing `lib/` runners,
- * and binds an HTTP trigger so the Vercel app can POST a turn and get the result
- * (see `lib/iii/run-iii.ts`). Run with `pnpm worker` (alongside a running
- * engine) or via the Docker image in this repo.
+ * Connects to the iii engine bus and exposes one agent turn over HTTP. The turn
+ * runs this repo's existing `lib/` runners (the runners own their own
+ * `withProvider` scope, so this drives them exactly like the Next API routes).
  *
- * The runners already set up their own per-request credential scope
- * (`withProvider`), so this worker drives them exactly like the Next API routes
- * do — no logic is duplicated, only the transport changes.
+ * Adopts iii's prebuilt workers, each behind a flag in `config.ts` (all OFF by
+ * default — the batch HTTP path is the verified default):
+ *   - iii-queue   — enqueue the turn so it outlives the HTTP request.
+ *   - iii-stream  — publish events live for the app to subscribe to.
+ *   - iii-state   — load/save session history server-side.
+ *   - harness     — gate tools via policy::check_permissions.
+ *
+ * Run with `pnpm worker` (alongside a running engine) or the repo Docker image.
  */
-import { registerWorker, type RegisterTriggerInput } from 'iii-sdk';
-import { AgentOrchestrator } from '@/lib/orchestrator';
-import { runAgentsWithCoordination } from '@/lib/runner';
-import { runHierarchical } from '@/lib/hierarchical-runner';
-import { runEvaluatorOptimizer } from '@/lib/evaluator-optimizer-runner';
-import { runDebate } from '@/lib/debate-runner';
-import { runBlackboard } from '@/lib/blackboard-runner';
-import { runMarket } from '@/lib/market-runner';
-import { runSelfConsistency } from '@/lib/self-consistency-runner';
-import { runSwarm } from '@/lib/swarm-runner';
-import { Conversation, type ConversationTurn } from '@/lib/conversation';
-import { resolveModel, type ProviderId } from '@/lib/models';
+import { registerWorker, TriggerAction, type ISdk, type RegisterTriggerInput } from 'iii-sdk';
 import type { AgentEvent } from '@/lib/agent-events';
-import type { Mode } from '@/lib/modes';
+import type { ConversationTurn } from '@/lib/conversation';
+import { withPolicy } from '@/lib/iii/policy-context';
+import { cfg } from './config';
+import { runMode, type TurnRequest } from './run';
+import { makePolicyChecker } from './policy';
+import { loadSession, saveSession } from './state';
+import { publishEvent, streamNameFor } from './stream';
 
-const ENGINE_URL = process.env.III_ENGINE_URL?.trim() || 'ws://localhost:49134';
-const RUN_FN = process.env.MAT_RUN_FUNCTION_ID?.trim() || 'mat::run';
-const RUN_PATH = (() => {
-  const p = process.env.III_RUN_PATH?.trim() || '/run';
-  return p.startsWith('/') ? p : `/${p}`;
-})();
-const TOKEN = process.env.III_ENGINE_TOKEN?.trim() || undefined;
-
-interface TurnRequest {
-  mode: Mode;
-  message: string;
-  model?: string;
-  provider?: ProviderId;
-  api_key?: string;
-  history?: ConversationTurn[];
-  auth_token?: string;
+function findComplete(events: AgentEvent[]) {
+  return [...events]
+    .reverse()
+    .find((e): e is Extract<AgentEvent, { type: 'workflow_complete' }> => e.type === 'workflow_complete');
 }
 
-type RunnerOpts = { model: string; apiKey?: string; providerId: ProviderId };
+/** Run a turn end-to-end: state in, run (policy-gated), stream out, state back. */
+async function executeTurn(iii: ISdk, req: TurnRequest, runId: string) {
+  const policy = cfg.policyEnabled ? makePolicyChecker(iii) : null;
 
-/** Dispatch a turn to the runner for its mode, mirroring the Next API routes. */
-async function runMode(req: TurnRequest, send: (e: AgentEvent) => void): Promise<void> {
-  const conversation = new Conversation(req.history ?? []);
-  const opts: RunnerOpts = {
-    model: resolveModel(req.model),
-    apiKey: req.api_key,
-    providerId: req.provider ?? 'openai',
+  // Prefer server-side session history (iii-state) over client-sent history.
+  const stored = await loadSession(iii, req.conversationId);
+  const history = stored ?? req.history ?? [];
+
+  const events: AgentEvent[] = [];
+  const send = (e: AgentEvent) => {
+    events.push(e);
+    void publishEvent(iii, runId, e); // live (no-op unless streaming)
   };
-  switch (req.mode) {
-    case 'v1':
-      await new AgentOrchestrator(opts).processUserMessage(req.message, send, conversation);
-      return;
-    case 'v2':
-      await runAgentsWithCoordination(req.message, opts, send, conversation);
-      return;
-    case 'v3':
-      await runHierarchical(req.message, opts, send, conversation);
-      return;
-    case 'v4':
-      await runEvaluatorOptimizer(req.message, opts, send, conversation);
-      return;
-    case 'v5':
-      await runDebate(req.message, opts, send, conversation);
-      return;
-    case 'v6':
-      await runBlackboard(req.message, opts, send, conversation);
-      return;
-    case 'v7':
-      await runMarket(req.message, opts, send, conversation);
-      return;
-    case 'v8':
-      await runSelfConsistency(req.message, opts, send, conversation);
-      return;
-    case 'v9':
-      await runSwarm(req.message, opts, send, conversation);
-      return;
-    default:
-      throw new Error(`Unknown mode: ${String((req as TurnRequest).mode)}`);
+
+  try {
+    const run = () => runMode(req, history, send);
+    await (policy ? withPolicy(policy, run) : run());
+  } catch (err) {
+    send({ type: 'workflow_error', error: err instanceof Error ? err.message : String(err) });
   }
+
+  const complete = findComplete(events);
+
+  // Persist the updated session (best-effort, no-op unless state enabled).
+  if (complete?.result) {
+    await saveSession(iii, req.conversationId, [
+      ...history,
+      { role: 'user', content: req.message },
+      { role: 'assistant', content: complete.result },
+    ] as ConversationTurn[]);
+  }
+
+  return {
+    runId,
+    streamName: streamNameFor(runId),
+    group: cfg.streamGroup,
+    result: complete?.result ?? '',
+    iterations: complete?.iterations,
+    agentsUsed: complete?.agentsUsed,
+    totalInputTokens: complete?.totalInputTokens,
+    totalOutputTokens: complete?.totalOutputTokens,
+    totalCostUsd: complete?.totalCostUsd,
+    events,
+  };
 }
 
 async function main() {
-  const iii = registerWorker(ENGINE_URL, { workerName: 'mat-worker' });
+  const iii = registerWorker(cfg.engineUrl, { workerName: 'mat-worker' });
 
-  iii.registerFunction(RUN_FN, async (payload: unknown) => {
+  // HTTP entrypoint: authorize, mint a run id, then enqueue (durable) or run
+  // inline. Either way the response carries the stream the app can read live.
+  iii.registerFunction(cfg.runFn, async (payload: unknown) => {
     const req = (payload ?? {}) as TurnRequest;
+    if (cfg.token && req.auth_token !== cfg.token) return { error: 'unauthorized' };
+    if (!req.message || !req.mode) return { error: 'mode and message are required' };
 
-    // Fail closed when a token is configured: the engine's HTTP boundary is
-    // public, so a shared secret gates who can spend keys/credits here.
-    if (TOKEN && req.auth_token !== TOKEN) {
-      return { error: 'unauthorized' };
-    }
-    if (!req.message || !req.mode) {
-      return { error: 'mode and message are required' };
-    }
+    const runId = crypto.randomUUID();
 
-    const events: AgentEvent[] = [];
-    const send = (e: AgentEvent) => {
-      events.push(e);
-    };
-
-    try {
-      await runMode(req, send);
-    } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err), events };
+    if (cfg.queueEnabled) {
+      void iii.trigger({
+        function_id: cfg.executeFn,
+        payload: { ...req, runId },
+        action: TriggerAction.Enqueue({ queue: cfg.queueName }),
+      });
+      return { runId, streamName: streamNameFor(runId), group: cfg.streamGroup, queued: true };
     }
 
-    // The runners emit their own terminal workflow_complete; lift its fields up
-    // as the HTTP result, and return the full event list for the app to replay.
-    const complete = [...events]
-      .reverse()
-      .find((e): e is Extract<AgentEvent, { type: 'workflow_complete' }> => e.type === 'workflow_complete');
+    return executeTurn(iii, req, runId);
+  });
 
-    return {
-      result: complete?.result ?? '',
-      iterations: complete?.iterations,
-      agentsUsed: complete?.agentsUsed,
-      totalInputTokens: complete?.totalInputTokens,
-      totalOutputTokens: complete?.totalOutputTokens,
-      totalCostUsd: complete?.totalCostUsd,
-      events,
-    };
+  // Queue target: runs the turn out-of-band; results land on the stream.
+  iii.registerFunction(cfg.executeFn, async (payload: unknown) => {
+    const req = (payload ?? {}) as TurnRequest & { runId?: string };
+    return executeTurn(iii, req, req.runId || crypto.randomUUID());
   });
 
   iii.registerTrigger({
     type: 'http',
-    function_id: RUN_FN,
-    config: { api_path: RUN_PATH, http_method: 'POST' },
+    function_id: cfg.runFn,
+    config: { api_path: cfg.runPath, http_method: 'POST' },
   } as RegisterTriggerInput);
 
-  console.log(`[mat-worker] connected to ${ENGINE_URL}`);
-  console.log(`[mat-worker] registered ${RUN_FN} · POST ${RUN_PATH}${TOKEN ? ' (token required)' : ''}`);
+  const on = (b: boolean) => (b ? 'on' : 'off');
+  console.log(`[mat-worker] connected to ${cfg.engineUrl}`);
+  console.log(`[mat-worker] ${cfg.runFn} · POST ${cfg.runPath}${cfg.token ? ' (token required)' : ''}`);
+  console.log(
+    `[mat-worker] queue=${on(cfg.queueEnabled)} stream=${on(cfg.streamEnabled)} state=${on(cfg.stateEnabled)} policy=${on(cfg.policyEnabled)}`,
+  );
 
   const shutdown = async () => {
     try {

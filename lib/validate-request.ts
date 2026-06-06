@@ -28,6 +28,8 @@ export interface AgentRunBody {
   provider?: ProviderId;
   /** Which execution backend runs this turn. Defaults to the in-app harness. */
   backend: Backend;
+  /** Stable chat id, used by the iii backend for server-side sessions. */
+  conversationId?: string;
 }
 
 export type ValidationResult =
@@ -94,6 +96,10 @@ export function validateAgentRunBody(raw: unknown): ValidationResult {
   // Backend is optional from older clients; coerce to a valid value (default
   // 'current') rather than rejecting, so existing chats keep working.
   const backend = asBackend(b.backend);
+  const conversationId =
+    typeof b.conversationId === 'string' && b.conversationId.length <= 100
+      ? b.conversationId
+      : undefined;
 
-  return { ok: true, body: { message, model, history, apiKey, provider, backend } };
+  return { ok: true, body: { message, model, history, apiKey, provider, backend, conversationId } };
 }

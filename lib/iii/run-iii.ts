@@ -2,20 +2,31 @@ import type { AgentEvent, EventSink } from '@/lib/agent-events';
 import type { ConversationTurn } from '@/lib/conversation';
 import type { Mode } from '@/lib/modes';
 import type { ProviderId } from '@/lib/models';
-import { iiiEngineHttpUrl, iiiEngineToken, iiiRunPath, iiiTurnTimeoutMs } from './config';
+import {
+  iiiEngineHttpUrl,
+  iiiEngineToken,
+  iiiRunPath,
+  iiiStreamEnabled,
+  iiiStreamGroup,
+  iiiStreamReadPath,
+  iiiStreamUrl,
+  iiiTurnTimeoutMs,
+} from './config';
+import { readEngineStream } from './stream-read';
 
 /**
  * Adapter that runs a turn on the iii engine instead of the in-app harness.
  *
- * The app POSTs the turn to the engine's HTTP trigger (served by the iii-http
- * worker); our worker (`iii-worker/`) runs the agent loop with the existing
- * `lib/` runners and returns `{ result, events, ...totals }`. We replay those
- * events into this app's {@link AgentEvent} stream so the chat UI renders
- * unchanged, then emit `workflow_complete`.
+ * The app POSTs the turn to the engine's HTTP trigger (the iii-http worker);
+ * our worker (`iii-worker/`) runs the agent loop with the existing `lib/`
+ * runners. Two transports, by config:
+ *   - batch (default): the worker returns `{ result, events, ...totals }`; we
+ *     replay the events and complete.
+ *   - stream (III_STREAM_ENABLED): the worker publishes events to iii-stream and
+ *     we read them live from the engine Stream API.
  *
  * Fails closed: a missing endpoint, non-2xx, or timeout surfaces a single,
- * actionable `workflow_error`. The in-app backend is unaffected — this module is
- * only imported on the `iii` path.
+ * actionable `workflow_error`. Only imported on the `iii` path.
  */
 
 export interface IiiRunContext {
@@ -25,24 +36,26 @@ export interface IiiRunContext {
   providerId: ProviderId;
   apiKey?: string;
   history: ConversationTurn[];
+  conversationId?: string;
   send: EventSink;
 }
 
-/** JSON body POSTed to the engine's run trigger. */
 interface IiiTurnRequest {
   mode: Mode;
   message: string;
   model: string;
   provider: ProviderId;
-  /** The visitor's BYO key, forwarded for this run only (see SECURITY.md). */
   api_key?: string;
   history: ConversationTurn[];
-  /** Shared secret, also sent as a Bearer header. */
+  conversationId?: string;
   auth_token?: string;
 }
 
-/** Shape the worker returns (a workflow_complete plus the full event list). */
 interface IiiTurnResponse {
+  runId?: string;
+  streamName?: string;
+  group?: string;
+  queued?: boolean;
   result?: string;
   text?: string;
   output?: string;
@@ -64,13 +77,16 @@ const KNOWN_EVENT_TYPES = new Set<AgentEvent['type']>([
 
 /**
  * Best-effort translation of an engine event item into one of our AgentEvents.
- * Items already shaped like an AgentEvent (known `type`) pass through; a generic
- * `{ text, agent }` step maps to `agent_step`. Anything else is dropped rather
- * than risk a malformed event reaching the UI.
+ * Unwraps an iii-stream item envelope (`{ data }`) if present. Items already
+ * shaped like an AgentEvent pass through; a generic `{ text, agent }` step maps
+ * to `agent_step`. Anything else is dropped.
  */
 export function translateIiiEvent(item: unknown): AgentEvent | null {
   if (!item || typeof item !== 'object') return null;
-  const obj = item as Record<string, unknown>;
+  let obj = item as Record<string, unknown>;
+  if ('data' in obj && obj.data && typeof obj.data === 'object') {
+    obj = obj.data as Record<string, unknown>;
+  }
   if (typeof obj.type === 'string' && KNOWN_EVENT_TYPES.has(obj.type as AgentEvent['type'])) {
     return obj as unknown as AgentEvent;
   }
@@ -86,7 +102,6 @@ export function translateIiiEvent(item: unknown): AgentEvent | null {
   return null;
 }
 
-/** Map a transport error to a short, actionable message. */
 function describeIiiError(err: unknown, url: string): string {
   if (err instanceof Error && err.name === 'AbortError') {
     return `The iii engine didn't respond in time (${url}). It may be overloaded or the run exceeded the timeout.`;
@@ -99,7 +114,7 @@ function describeIiiError(err: unknown, url: string): string {
 }
 
 export async function runIiiBackend(ctx: IiiRunContext): Promise<void> {
-  const { mode, message, model, providerId, apiKey, history, send } = ctx;
+  const { mode, message, model, providerId, apiKey, history, conversationId, send } = ctx;
 
   send({ type: 'workflow_start', mode, model, query: message });
 
@@ -120,31 +135,19 @@ export async function runIiiBackend(ctx: IiiRunContext): Promise<void> {
 
   try {
     const body: IiiTurnRequest = {
-      mode,
-      message,
-      model,
-      provider: providerId,
-      api_key: apiKey,
-      history,
-      auth_token: token,
+      mode, message, model, provider: providerId, api_key: apiKey, history, conversationId, auth_token: token,
     };
 
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
 
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      send({
-        type: 'workflow_error',
-        error: `iii engine returned ${res.status}. ${detail.slice(0, 300)}`.trim(),
-      });
+      send({ type: 'workflow_error', error: `iii engine returned ${res.status}. ${detail.slice(0, 300)}`.trim() });
       return;
     }
 
@@ -154,11 +157,37 @@ export async function runIiiBackend(ctx: IiiRunContext): Promise<void> {
       return;
     }
 
-    // Replay the run's events (skip the trailing complete — we synthesize ours).
+    // Live path: subscribe to the run's stream and forward events as they land.
+    if (iiiStreamEnabled()) {
+      const streamName = data.streamName ?? (data.runId ? `mat:run:${data.runId}` : undefined);
+      if (!streamName) {
+        send({ type: 'workflow_error', error: 'iii streaming is enabled but the engine returned no stream name.' });
+        return;
+      }
+      const group = data.group ?? iiiStreamGroup();
+      for await (const item of readEngineStream({
+        baseUrl: iiiStreamUrl(),
+        path: iiiStreamReadPath(),
+        streamName,
+        group,
+        token,
+        signal: controller.signal,
+      })) {
+        const event = translateIiiEvent(item);
+        if (!event || event.type === 'workflow_start') continue; // we emitted our own start
+        send(event);
+        if (event.type === 'workflow_complete' || event.type === 'workflow_error') return;
+      }
+      send({ type: 'workflow_error', error: 'iii stream ended before the run completed.' });
+      return;
+    }
+
+    // Batch path: replay the worker's events, then synthesize completion.
     if (Array.isArray(data.events)) {
       for (const item of data.events) {
         const event = translateIiiEvent(item);
-        if (event && event.type !== 'workflow_complete') send(event);
+        if (!event || event.type === 'workflow_start' || event.type === 'workflow_complete') continue;
+        send(event);
       }
     }
 

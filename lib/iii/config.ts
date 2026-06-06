@@ -32,3 +32,36 @@ export function iiiTurnTimeoutMs(): number {
 export function isIiiConfigured(): boolean {
   return Boolean(iiiEngineHttpUrl());
 }
+
+/**
+ * Live streaming (iii-stream). When enabled, `mat::run` returns a stream name and
+ * the app reads run events live from the engine Stream API instead of getting a
+ * batched result. OFF by default — the batch path is the verified default.
+ *
+ * NOTE: the engine Stream API wire format is finalized against a live engine;
+ * the base URL and read path are configurable so a deploy can point at the real
+ * endpoint without code changes.
+ */
+export function iiiStreamEnabled(): boolean {
+  return process.env.III_STREAM_ENABLED === 'true';
+}
+
+/** Base URL of the engine Stream API (defaults to the HTTP host on :3112). */
+export function iiiStreamUrl(): string {
+  const explicit = process.env.III_STREAM_URL?.trim();
+  if (explicit) return explicit;
+  const http = iiiEngineHttpUrl();
+  if (!http) return '';
+  // Default to the same host on the documented Stream API port.
+  return http.replace(/:\d+$/, '').replace(/\/$/, '') + ':3112';
+}
+
+/** Path template the app reads a run's stream from. `{stream}`/`{group}` substituted. */
+export function iiiStreamReadPath(): string {
+  return process.env.III_STREAM_READ_PATH?.trim() || '/streams/{stream}/{group}';
+}
+
+/** Stream group the worker publishes a run's events under. */
+export function iiiStreamGroup(): string {
+  return process.env.III_STREAM_GROUP?.trim() || 'events';
+}

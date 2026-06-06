@@ -2,6 +2,7 @@ import { tool, generateText } from "ai";
 import { z } from "zod";
 import { DEFAULT_MODEL, type OpenAIModel } from "../models";
 import { provider, webSearchAvailable } from "../provider";
+import { policyCheck, PolicyDeniedError } from "../iii/policy-context";
 import type { AgentHooks } from "../agent-events";
 import * as log from "../logger";
 
@@ -26,6 +27,20 @@ export function makeWebSearchTool(model: OpenAIModel = DEFAULT_MODEL, hooks: Age
         .describe('What to extract, e.g. "recent statistics", "best practices", "comparison".'),
     }),
     execute: async ({ query, extractionGoal }) => {
+      // Policy gate (iii backend only; a no-op on the in-app path). Web search
+      // reaches the public internet, so it's the meaningful boundary to guard.
+      try {
+        await policyCheck({ tool: "web_search", input: { query } });
+      } catch (err) {
+        if (err instanceof PolicyDeniedError) {
+          return {
+            success: false,
+            findings: `Web search was blocked by policy for "${query}": ${err.result.reason ?? err.result.decision}.`,
+            sources: "",
+          };
+        }
+        throw err;
+      }
       // Web search is OpenAI-only; skip cleanly under other providers.
       if (!webSearchAvailable()) {
         return {

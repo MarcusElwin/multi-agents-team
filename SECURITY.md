@@ -69,6 +69,13 @@ key travels **one extra hop**: app → engine (`lib/iii/run-iii.ts` →
   unconfigured (`III_ENGINE_HTTP_URL` unset) — it then can't be used — or run the
   engine with its **own** provider keys so visitor keys are never forwarded.
 
+On the plus side, the `iii` path can **add** a control the in-app backend lacks:
+with `III_POLICY_ENABLED=true`, tools are gated by the harness's
+`policy::check_permissions` (driven by `iii-permissions.yaml`) **before** they run
+— fail-closed, so an unreachable policy worker denies rather than allows. Today
+this guards `web_search` (the only tool reaching the public internet); the gate
+(`lib/iii/policy-context.ts`) is a no-op on the in-app backend.
+
 ---
 
 ## 3. Request attack surface

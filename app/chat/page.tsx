@@ -401,6 +401,8 @@ export default function Home() {
           history,
           // Which execution backend runs this turn (in-app harness vs iii engine).
           backend,
+          // Stable chat id, used by the iii backend for server-side sessions.
+          conversationId: runId,
           // BYO key: send the user's key for this model's provider, if set.
           provider,
           apiKey: settings.apiKeys[provider],

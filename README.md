@@ -497,6 +497,30 @@ Locally you can run the engine (`iii --use-default-config`) and the worker
 (`pnpm worker`) in two terminals, with `III_ENGINE_HTTP_URL=http://localhost:3111`.
 BYO keys take one extra hop to the engine on this path — see `SECURITY.md` §2.
 
+### Adopting iii's prebuilt workers
+
+The worker keeps our `lib/` runners but can lean on iii's [registry
+workers](https://workers.iii.dev/) for the cross-cutting harness jobs. Each is
+**off by default** (the batch HTTP path stays the verified default) and turns on
+with one env flag — set the same flag on the worker (Fly secret) and, where
+noted, on the app (Vercel):
+
+| Capability | Worker | What it does | Flag |
+| --- | --- | --- | --- |
+| **iii-stream** | `iii-worker/stream.ts` + app `lib/iii/stream-read.ts` | Publishes run events live; the app reads them from the engine Stream API instead of a batched result — restores the live timeline. | `III_STREAM_ENABLED` (app+worker) |
+| **iii-state** | `iii-worker/state.ts` | Server-side session history keyed by `conversationId`, replacing localStorage-only history. | `III_STATE_ENABLED` (worker) |
+| **iii-queue** | `iii-worker/index.ts` | Enqueues the turn so it outlives the HTTP request (durable long runs; fixes the [HITL timeout](https://github.com/MarcusElwin/multi-agents-team/issues/22)). | `III_QUEUE_ENABLED` (worker) |
+| **harness policy** | `iii-worker/policy.ts` + `lib/iii/policy-context.ts` + `iii-permissions.yaml` | Gates tools (today `web_search`) through `policy::check_permissions` before they run — fail-closed. | `III_POLICY_ENABLED` (worker) |
+
+The policy gate uses an `AsyncLocalStorage` context (`lib/iii/policy-context.ts`),
+so shared tools stay provider-agnostic — it's a no-op on the in-app backend.
+
+> **Verify against a live engine.** The engine-specific function ids, the Stream
+> API read path, and the policy/state payload shapes are all env-configurable and
+> marked `VERIFY (live engine)` in the worker source — confirm them on your first
+> deploy and adjust the env (no code change needed). See the full env list in
+> [`.env.example`](.env.example).
+
 ### Models, providers & cost — `lib/models.ts`
 
 ```typescript

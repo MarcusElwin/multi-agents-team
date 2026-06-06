@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
 
       try {
         if (backend === 'iii') {
-          await runIiiBackend({ mode: 'v3', message, model: resolvedModel, providerId: creds.providerId, apiKey: creds.apiKey, history: priorTurns, send });
+          await runIiiBackend({ mode: 'v3', message, model: resolvedModel, providerId: creds.providerId, apiKey: creds.apiKey, history: priorTurns, conversationId: parsed.body.conversationId, send });
         } else {
           const conversation = new Conversation(priorTurns);
           await runHierarchical(message, { model: resolvedModel, apiKey: creds.apiKey, providerId: creds.providerId }, send, conversation);

@@ -1,0 +1,24 @@
+# Tool permission policy for the iii harness worker (policy::check_permissions).
+#
+# Active only on the iii backend with III_POLICY_ENABLED=true. The worker calls
+# the harness before a guarded tool runs (today: web_search — the tool that
+# reaches the public internet). Fail-closed: if the policy worker is unreachable,
+# the call is denied rather than allowed.
+#
+# VERIFY (live engine): this schema is the documented allow/deny/needs_approval
+# shape; confirm the exact field names against your engine's harness worker and
+# adjust if needed.
+version: 1
+
+# Anything not matched below falls through to this.
+default: needs_approval
+
+rules:
+  # Web search is read-only and safe — allow it outright.
+  - tool: web_search
+    decision: allow
+
+  # Example of a hard block:
+  # - tool: shell
+  #   decision: deny
+  #   reason: "Shell execution is not permitted in this deployment."

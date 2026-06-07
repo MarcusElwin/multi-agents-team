@@ -8,7 +8,10 @@ import { describeError } from '@/lib/error-message';
 import { validateAgentRunBody } from '@/lib/validate-request';
 import type { AgentEvent } from '@/lib/agent-events';
 
-export const maxDuration = 60;
+// v1 runs a coordinator + researcher (web search) + writer + editor; a
+// research-heavy turn takes ~2 min, so 60s killed real runs (and the iii path,
+// whose turn timeout is 240s). Match the heavier modes / Vercel's max.
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {

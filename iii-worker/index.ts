@@ -114,6 +114,29 @@ async function main() {
     console.error('[mat-worker] unhandledRejection (continuing):', reason instanceof Error ? reason.message : reason);
   });
 
+  // Pre-flight: warn if a mat-worker is already serving this engine. Multiple
+  // workers register the same `mat::run`, and the engine load-balances across
+  // them — so a duplicate causes requests to randomly hit a stale instance and
+  // time out. (The SDK has no replace-on-register, so this is a loud warning,
+  // not a hard stop — `pnpm worker` twice is the usual cause.)
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 1500);
+    const res = await fetch(`${cfg.engineHttpUrl}${cfg.healthPath}`, { signal: ctrl.signal }).catch(() => null);
+    clearTimeout(t);
+    if (res?.ok) {
+      const body = (await res.json().catch(() => ({}))) as { uptimeMs?: number };
+      console.warn(
+        `\n⚠️  [mat-worker] another mat-worker is ALREADY serving ${cfg.engineHttpUrl}` +
+          (body.uptimeMs ? ` (up ${Math.round(body.uptimeMs / 1000)}s)` : '') +
+          `.\n   Two workers split runs and cause random timeouts. Stop the other first:` +
+          `\n     pkill -f "iii-worker/index.ts"\n`,
+      );
+    }
+  } catch {
+    // pre-flight is best-effort; never block startup on it
+  }
+
   const iii = registerWorker(cfg.engineUrl, { workerName: 'mat-worker' });
 
   // HTTP entrypoint. The response is a channel: when running inline we stream

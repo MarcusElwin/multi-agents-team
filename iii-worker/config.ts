@@ -19,6 +19,15 @@ export const cfg = {
     const p = env('III_RUN_PATH') || '/run';
     return p.startsWith('/') ? p : `/${p}`;
   })(),
+  // The engine's HTTP API base (for the worker's own pre-flight duplicate
+  // check). Defaults to the bus host on :3111 (the engine REST port).
+  engineHttpUrl: (() => {
+    const explicit = env('III_ENGINE_HTTP_URL');
+    if (explicit) return explicit.replace(/\/$/, '');
+    const ws = env('III_ENGINE_URL') || 'ws://localhost:49134';
+    const host = ws.replace(/^wss?:\/\//, '').replace(/:\d+.*$/, '');
+    return `http://${host}:3111`;
+  })(),
   healthPath: (() => {
     const p = env('III_HEALTH_PATH') || '/health';
     return p.startsWith('/') ? p : `/${p}`;

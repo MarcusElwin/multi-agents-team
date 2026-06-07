@@ -18,6 +18,7 @@
  * Each prebuilt-worker integration is behind a flag in `config.ts`, off by
  * default. Run with `pnpm worker` or the repo Docker image.
  */
+import { randomUUID } from 'node:crypto';
 import { registerWorker, http, TriggerAction, type ISdk, type ApiResponse, type RegisterTriggerInput } from 'iii-sdk';
 import type { AgentEvent } from '@/lib/agent-events';
 import type { ConversationTurn } from '@/lib/conversation';
@@ -103,6 +104,16 @@ async function runTurn(iii: ISdk, req: TurnRequest, runId: string, send: (e: Age
 }
 
 async function main() {
+  // The worker is long-lived and serves many runs. A single dropped client
+  // connection (or a transient bus reconnect) must never take it down, so we
+  // log-and-continue on otherwise-unhandled async errors instead of crashing.
+  process.on('uncaughtException', (err) => {
+    console.error('[mat-worker] uncaughtException (continuing):', err instanceof Error ? err.message : err);
+  });
+  process.on('unhandledRejection', (reason) => {
+    console.error('[mat-worker] unhandledRejection (continuing):', reason instanceof Error ? reason.message : reason);
+  });
+
   const iii = registerWorker(cfg.engineUrl, { workerName: 'mat-worker' });
 
   // HTTP entrypoint. The response is a channel: when running inline we stream
@@ -116,7 +127,7 @@ async function main() {
       if (cfg.token && token !== cfg.token) return apiJson(401, { error: 'unauthorized' });
       if (!body.message || !body.mode) return apiJson(400, { error: 'mode and message are required' });
 
-      const runId = crypto.randomUUID();
+      const runId = randomUUID();
 
       if (cfg.queueEnabled) {
         void iii.trigger({
@@ -134,15 +145,40 @@ async function main() {
         'cache-control': 'no-cache, no-transform',
         'x-accel-buffering': 'no',
       });
+
+      // The channel write is async (chunked over the WebSocket), so a failure
+      // when the client has disconnected surfaces *later* as an 'error' event on
+      // the Writable — a sync try/catch can't catch it, and unhandled it crashes
+      // the whole worker. Track a `closed` flag, stop writing once closed, and
+      // swallow late stream errors so one dropped connection is non-fatal.
+      let closed = false;
+      const stream = res.stream as NodeJS.WritableStream & { on?: (ev: string, cb: () => void) => void };
+      stream.on?.('error', () => {
+        closed = true;
+      });
+      stream.on?.('close', () => {
+        closed = true;
+      });
+
       const send = (e: AgentEvent) => {
+        if (closed) return;
         try {
           res.stream.write(`data: ${JSON.stringify(e)}\n\n`);
         } catch {
-          // client gone
+          closed = true; // client gone — stop writing
         }
         if (cfg.streamEnabled) void publishEvent(iii, runId, e); // optional persistence/fanout
       };
       await runTurn(iii, body, runId, send);
+      // The channel write is async/chunked, so the final `workflow_complete`
+      // event may still be in flight. Closing immediately races that flush and
+      // the app sees the stream end without a terminal event ("iii stream ended
+      // before the run completed"). Yield a few macrotasks so the last chunk
+      // drains over the WebSocket before we close the channel.
+      if (!closed) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      closed = true;
       try {
         res.close();
       } catch {
@@ -154,7 +190,7 @@ async function main() {
   // Queue target: runs the turn out-of-band; events go to the named stream.
   iii.registerFunction(cfg.executeFn, async (payload: unknown) => {
     const req = (payload ?? {}) as TurnRequest & { runId?: string };
-    const runId = req.runId || crypto.randomUUID();
+    const runId = req.runId || randomUUID();
     return runTurn(iii, req, runId, (e) => void publishEvent(iii, runId, e));
   });
 

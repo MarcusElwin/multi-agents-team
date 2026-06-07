@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { ISdk } from 'iii-sdk';
 import type { AgentEvent } from '@/lib/agent-events';
 import { cfg } from './config';
@@ -24,7 +25,7 @@ export async function publishEvent(iii: ISdk, runId: string, event: AgentEvent):
       payload: {
         stream_name: streamNameFor(runId),
         group_id: cfg.streamGroup,
-        item_id: crypto.randomUUID(),
+        item_id: randomUUID(),
         data: event,
       },
     });

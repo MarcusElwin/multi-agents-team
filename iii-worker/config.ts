@@ -26,7 +26,11 @@ export const cfg = {
 
   // iii-stream: publish run events live.
   streamEnabled: flag('III_STREAM_ENABLED'),
-  streamPublishFn: env('III_STREAM_PUBLISH_FN') || 'stream::publish',
+  // The engine's stream worker registers `stream::send` (append an item);
+  // there is no `stream::publish` (that's the pub/sub `publish` fn, which wants
+  // a topic, not a stream). Using the wrong id is silently fatal — every publish
+  // returns "Function not found" and the stream stays empty.
+  streamPublishFn: env('III_STREAM_PUBLISH_FN') || 'stream::send',
   streamNamePrefix: env('III_STREAM_NAME_PREFIX') || 'mat:run:',
   streamGroup: env('III_STREAM_GROUP') || 'events',
 

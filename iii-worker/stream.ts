@@ -23,6 +23,10 @@ export async function publishEvent(iii: ISdk, runId: string, event: AgentEvent):
     await iii.trigger({
       function_id: cfg.streamPublishFn,
       payload: {
+        // `stream::send` is a tagged enum — the `type: 'item'` discriminator is
+        // required, then the item fields. Without it the engine rejects with a
+        // deserialization error ("missing field `type`").
+        type: 'item',
         stream_name: streamNameFor(runId),
         group_id: cfg.streamGroup,
         item_id: randomUUID(),

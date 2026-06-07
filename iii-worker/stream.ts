@@ -20,13 +20,11 @@ export function streamNameFor(runId: string): string {
 export async function publishEvent(iii: ISdk, runId: string, event: AgentEvent): Promise<void> {
   if (!cfg.streamEnabled) return;
   try {
+    // StreamSetInput: { stream_name, group_id, item_id, data }. Each event is a
+    // distinct item (unique item_id) so the run reads as an ordered group.
     await iii.trigger({
       function_id: cfg.streamPublishFn,
       payload: {
-        // `stream::send` is a tagged enum — the `type: 'item'` discriminator is
-        // required, then the item fields. Without it the engine rejects with a
-        // deserialization error ("missing field `type`").
-        type: 'item',
         stream_name: streamNameFor(runId),
         group_id: cfg.streamGroup,
         item_id: randomUUID(),

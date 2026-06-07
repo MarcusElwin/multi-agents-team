@@ -5,6 +5,7 @@ import type { ProviderId } from '@/lib/models';
 import {
   iiiEngineHttpUrl,
   iiiEngineToken,
+  iiiHealthPath,
   iiiRunPath,
   iiiStreamGroup,
   iiiStreamReadPath,
@@ -12,6 +13,43 @@ import {
   iiiTurnTimeoutMs,
 } from './config';
 import { parseSSEStream, readEngineStream } from './stream-read';
+
+/** Result of an iii engine/worker health probe. */
+export type IiiHealth =
+  | { ok: true; uptimeMs?: number; features?: Record<string, boolean> }
+  | { ok: false; error: string };
+
+/**
+ * Ping the worker's `GET /health` trigger to confirm it's registered and
+ * reachable, before dispatching a (potentially long) run. Returns a structured
+ * result with a human-readable error on any failure — fast (3s) by design.
+ */
+export async function checkIiiHealth(): Promise<IiiHealth> {
+  const base = iiiEngineHttpUrl();
+  if (!base) return { ok: false, error: 'No engine configured (set III_ENGINE_HTTP_URL).' };
+
+  const url = base.replace(/\/$/, '') + iiiHealthPath();
+  const token = iiiEngineToken();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(url, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      return { ok: false, error: `Engine health returned ${res.status}. Is the worker registered?` };
+    }
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; uptimeMs?: number; features?: Record<string, boolean> };
+    if (body?.ok === false) return { ok: false, error: 'Worker reported unhealthy.' };
+    return { ok: true, uptimeMs: body?.uptimeMs, features: body?.features };
+  } catch (err) {
+    const aborted = err instanceof Error && err.name === 'AbortError';
+    return { ok: false, error: aborted ? `Health check timed out — the iii engine at ${base} didn't respond.` : `Couldn't reach the iii engine at ${base}.` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Adapter that runs a turn on the iii engine instead of the in-app harness.

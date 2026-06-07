@@ -203,15 +203,45 @@ async function main() {
     return { received: true, bytes: Buffer.byteLength(content, 'utf8') };
   });
 
+  // Health check. Lets the app confirm the worker is registered and reachable
+  // *before* dispatching a run (so an unreachable/crashed worker surfaces as a
+  // clean "engine not ready" instead of a slow run timeout). Exposed both as a
+  // callable function (`mat::health`) and a `GET /health` HTTP trigger.
+  const startedAt = Date.now();
+  const healthBody = () => ({
+    ok: true,
+    worker: 'mat-worker',
+    runFn: cfg.runFn,
+    uptimeMs: Date.now() - startedAt,
+    features: {
+      queue: cfg.queueEnabled,
+      stream: cfg.streamEnabled,
+      state: cfg.stateEnabled,
+      policy: cfg.policyEnabled,
+      artifactChannel: cfg.artifactChannelEnabled,
+    },
+  });
+  iii.registerFunction(
+    cfg.healthFn,
+    http(async (): Promise<ApiResponse> => apiJson(200, healthBody())),
+  );
+
   iii.registerTrigger({
     type: 'http',
     function_id: cfg.runFn,
     config: { api_path: cfg.runPath, http_method: 'POST' },
   } as RegisterTriggerInput);
 
+  iii.registerTrigger({
+    type: 'http',
+    function_id: cfg.healthFn,
+    config: { api_path: cfg.healthPath, http_method: 'GET' },
+  } as RegisterTriggerInput);
+
   const on = (b: boolean) => (b ? 'on' : 'off');
   console.log(`[mat-worker] connected to ${cfg.engineUrl}`);
   console.log(`[mat-worker] ${cfg.runFn} · POST ${cfg.runPath}${cfg.token ? ' (token required)' : ''} · live SSE over channel`);
+  console.log(`[mat-worker] ${cfg.healthFn} · GET ${cfg.healthPath}`);
   console.log(
     `[mat-worker] queue=${on(cfg.queueEnabled)} stream=${on(cfg.streamEnabled)} state=${on(cfg.stateEnabled)} policy=${on(cfg.policyEnabled)} artifactChannel=${on(cfg.artifactChannelEnabled)}`,
   );

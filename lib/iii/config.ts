@@ -17,6 +17,12 @@ export function iiiRunPath(): string {
   return p.startsWith('/') ? p : `/${p}`;
 }
 
+/** Path the worker registers its health HTTP trigger on (GET). */
+export function iiiHealthPath(): string {
+  const p = process.env.III_HEALTH_PATH?.trim() || '/health';
+  return p.startsWith('/') ? p : `/${p}`;
+}
+
 /** Shared secret sent as a Bearer token (and body field) to authorize a run. */
 export function iiiEngineToken(): string | undefined {
   return process.env.III_ENGINE_TOKEN?.trim() || undefined;

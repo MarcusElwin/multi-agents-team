@@ -14,8 +14,13 @@ export const cfg = {
   engineUrl: env('III_ENGINE_URL') || 'ws://localhost:49134',
   runFn: env('MAT_RUN_FUNCTION_ID') || 'mat::run',
   executeFn: env('MAT_EXECUTE_FUNCTION_ID') || 'mat::execute',
+  healthFn: env('MAT_HEALTH_FUNCTION_ID') || 'mat::health',
   runPath: (() => {
     const p = env('III_RUN_PATH') || '/run';
+    return p.startsWith('/') ? p : `/${p}`;
+  })(),
+  healthPath: (() => {
+    const p = env('III_HEALTH_PATH') || '/health';
     return p.startsWith('/') ? p : `/${p}`;
   })(),
   token: env('III_ENGINE_TOKEN'),

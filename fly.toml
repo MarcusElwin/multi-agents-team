@@ -1,30 +1,25 @@
-# Fly.io app for the iii engine + MAT worker. Deploy from the repo root:
-#   fly launch --no-deploy        # once, to create the app (keep this file)
-#   fly secrets set III_ENGINE_TOKEN=$(openssl rand -hex 32)
-#   fly deploy
-# Then set III_ENGINE_HTTP_URL=https://<app>.fly.dev and the same token in Vercel.
-app = "mat-iii-engine"
-primary_region = "arn" # pick a region near your Vercel functions
+# fly.toml app configuration file generated for mat-iii-engine on 2026-06-09T22:11:03+02:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'mat-iii-engine'
+primary_region = 'arn'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
-# Non-secret worker config. The token is a secret (fly secrets set …), not here.
 [env]
-  III_QUEUE_ENABLED = "true"   # async path: enqueue runs, app polls /events
-  III_STREAM_ENABLED = "true"  # publish run events to the stream for the poll
+  III_QUEUE_ENABLED = 'true'
+  III_STREAM_ENABLED = 'true'
 
-# Only the engine's HTTP API (3111) is public; the worker bus (49134) stays
-# inside the machine. force_https makes the public endpoint wss/https only.
-# Keep one machine always running: a queued/async run executes independently of
-# the request, so the engine must not suspend mid-run (and it avoids cold starts).
 [http_service]
   internal_port = 3111
   force_https = true
-  auto_stop_machines = "off"
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "1gb"
+  size = 'shared-cpu-1x'
+  memory = '1gb'

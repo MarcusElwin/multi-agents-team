@@ -5,14 +5,12 @@ import type { ProviderId } from '@/lib/models';
 import {
   iiiEngineHttpUrl,
   iiiEngineToken,
+  iiiEventsPath,
   iiiHealthPath,
   iiiRunPath,
-  iiiStreamGroup,
-  iiiStreamReadPath,
-  iiiStreamUrl,
   iiiTurnTimeoutMs,
 } from './config';
-import { parseSSEStream, readEngineStream } from './stream-read';
+import { parseSSEStream } from './stream-read';
 
 /** Result of an iii engine/worker health probe. */
 export type IiiHealth =
@@ -208,24 +206,44 @@ export async function runIiiBackend(ctx: IiiRunContext): Promise<void> {
       return;
     }
 
-    // Queue path: the run was enqueued; read its events from the named stream.
-    if (data.queued && (data.streamName || data.runId)) {
-      const streamName = data.streamName ?? `mat:run:${data.runId}`;
-      const group = data.group ?? iiiStreamGroup();
-      for await (const item of readEngineStream({
-        baseUrl: iiiStreamUrl(),
-        path: iiiStreamReadPath(),
-        streamName,
-        group,
-        token,
-        signal: controller.signal,
-      })) {
-        const event = translateIiiEvent(item);
-        if (!event || event.type === 'workflow_start') continue;
-        send(event);
-        if (event.type === 'workflow_complete' || event.type === 'workflow_error') return;
+    // Queue path: the run was enqueued and runs to completion on the engine,
+    // independent of this request. Poll the worker's `GET /events?runId=&after=`
+    // for new events until it reports done — so a long run survives a function
+    // timeout / disconnect (it keeps running; the next poll picks up where we
+    // left off). The engine Stream API is WebSocket-only and there's no public
+    // HTTP function-invoke, so the worker proxies the read.
+    if (data.queued && data.runId) {
+      const runId = data.runId;
+      const eventsUrl = base.replace(/\/$/, '') + iiiEventsPath();
+      const deadline = Date.now() + iiiTurnTimeoutMs();
+      let cursor = 0;
+      let idle = 0;
+      while (Date.now() < deadline) {
+        if (controller.signal.aborted) return;
+        let poll: { events?: unknown[]; cursor?: number; done?: boolean } | null = null;
+        try {
+          const r = await fetch(`${eventsUrl}?runId=${encodeURIComponent(runId)}&after=${cursor}`, {
+            headers: token ? { authorization: `Bearer ${token}` } : {},
+            signal: controller.signal,
+          });
+          if (r.ok) poll = await r.json();
+        } catch {
+          // transient — retry on the next tick
+        }
+        const events = Array.isArray(poll?.events) ? poll!.events! : [];
+        for (const item of events) {
+          const event = translateIiiEvent(item);
+          if (!event || event.type === 'workflow_start') continue;
+          send(event);
+          if (event.type === 'workflow_complete' || event.type === 'workflow_error') return;
+        }
+        if (typeof poll?.cursor === 'number') cursor = poll.cursor;
+        if (poll?.done) return; // terminal event already forwarded above
+        idle = events.length === 0 ? idle + 1 : 0;
+        // Poll ~every 1.5s; back off slightly while idle to ease load.
+        await new Promise((r) => setTimeout(r, idle > 8 ? 3000 : 1500));
       }
-      send({ type: 'workflow_error', error: 'iii stream ended before the run completed.' });
+      send({ type: 'workflow_error', error: 'iii run timed out (the engine kept running but stopped reporting events).' });
       return;
     }
 

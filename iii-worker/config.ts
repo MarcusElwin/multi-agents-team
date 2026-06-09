@@ -15,6 +15,8 @@ export const cfg = {
   runFn: env('MAT_RUN_FUNCTION_ID') || 'mat::run',
   executeFn: env('MAT_EXECUTE_FUNCTION_ID') || 'mat::execute',
   healthFn: env('MAT_HEALTH_FUNCTION_ID') || 'mat::health',
+  eventsFn: env('MAT_EVENTS_FUNCTION_ID') || 'mat::events',
+  streamListFn: env('III_STREAM_LIST_FN') || 'stream::list',
   runPath: (() => {
     const p = env('III_RUN_PATH') || '/run';
     return p.startsWith('/') ? p : `/${p}`;
@@ -28,6 +30,10 @@ export const cfg = {
     const host = ws.replace(/^wss?:\/\//, '').replace(/:\d+.*$/, '');
     return `http://${host}:3111`;
   })(),
+  eventsPath: (() => {
+    const p = env('III_EVENTS_PATH') || '/events';
+    return p.startsWith('/') ? p : `/${p}`;
+  })(),
   healthPath: (() => {
     const p = env('III_HEALTH_PATH') || '/health';
     return p.startsWith('/') ? p : `/${p}`;
@@ -36,7 +42,10 @@ export const cfg = {
 
   // iii-queue: enqueue runs so they outlive the HTTP request.
   queueEnabled: flag('III_QUEUE_ENABLED'),
-  queueName: env('III_QUEUE_NAME') || 'mat',
+  // Enqueue to the engine's built-in `default` queue (it exists with consumers
+  // out of the box). A custom name must be declared first via a queue trigger,
+  // which the engine rejects as "Queue '<name>' not found" otherwise.
+  queueName: env('III_QUEUE_NAME') || 'default',
 
   // iii-stream: publish run events live.
   streamEnabled: flag('III_STREAM_ENABLED'),

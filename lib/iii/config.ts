@@ -23,6 +23,12 @@ export function iiiHealthPath(): string {
   return p.startsWith('/') ? p : `/${p}`;
 }
 
+/** Path the worker registers its events-poll HTTP trigger on (GET, queue path). */
+export function iiiEventsPath(): string {
+  const p = process.env.III_EVENTS_PATH?.trim() || '/events';
+  return p.startsWith('/') ? p : `/${p}`;
+}
+
 /** Shared secret sent as a Bearer token (and body field) to authorize a run. */
 export function iiiEngineToken(): string | undefined {
   return process.env.III_ENGINE_TOKEN?.trim() || undefined;

@@ -210,11 +210,14 @@ async function main() {
     }),
   );
 
-  // Queue target: runs the turn out-of-band; events go to the named stream.
+  // Queue target: runs the turn out-of-band; every event is published to the
+  // run's stream (force — the stream is the only output for a queued run) with a
+  // sequential id so the app's `GET /events` poll reads them in order.
   iii.registerFunction(cfg.executeFn, async (payload: unknown) => {
     const req = (payload ?? {}) as TurnRequest & { runId?: string };
     const runId = req.runId || randomUUID();
-    return runTurn(iii, req, runId, (e) => void publishEvent(iii, runId, e));
+    let seq = 0;
+    return runTurn(iii, req, runId, (e) => void publishEvent(iii, runId, e, { seq: seq++, force: true }));
   });
 
   // Artifact sink: drains a channel handed off by a run. In a real deployment
@@ -249,6 +252,37 @@ async function main() {
     http(async (): Promise<ApiResponse> => apiJson(200, healthBody())),
   );
 
+  // Events poll (queue path). The engine Stream API (:3112) is a WebSocket, not
+  // HTTP/SSE — and there's no public HTTP "invoke any function" route — so the
+  // app can't read a run's stream directly. Instead the worker (which is on the
+  // bus) exposes `GET /events?runId=&after=N`: it reads the run's stream via
+  // `stream::list` and returns items after the cursor, so the app can poll for
+  // events on a long/async run that outlives the original HTTP request.
+  iii.registerFunction(
+    cfg.eventsFn,
+    http(async (req): Promise<ApiResponse> => {
+      const q = (req.query_params ?? {}) as Record<string, string | string[]>;
+      const pick = (k: string) => (Array.isArray(q[k]) ? q[k][0] : q[k]) as string | undefined;
+      const runId = pick('runId');
+      const after = Number(pick('after') ?? '0') || 0;
+      const token = bearer(req.headers);
+      if (cfg.token && token !== cfg.token) return apiJson(401, { error: 'unauthorized' });
+      if (!runId) return apiJson(400, { error: 'runId required' });
+      try {
+        const items = (await iii.trigger({
+          function_id: cfg.streamListFn,
+          payload: { stream_name: streamNameFor(runId), group_id: cfg.streamGroup },
+        })) as AgentEvent[] | null;
+        const all = Array.isArray(items) ? items : [];
+        const next = all.slice(after);
+        const done = next.some((e) => e?.type === 'workflow_complete' || e?.type === 'workflow_error');
+        return apiJson(200, { runId, cursor: all.length, events: next, done });
+      } catch (err) {
+        return apiJson(200, { runId, cursor: after, events: [], done: false, warn: err instanceof Error ? err.message : String(err) });
+      }
+    }),
+  );
+
   iii.registerTrigger({
     type: 'http',
     function_id: cfg.runFn,
@@ -259,6 +293,12 @@ async function main() {
     type: 'http',
     function_id: cfg.healthFn,
     config: { api_path: cfg.healthPath, http_method: 'GET' },
+  } as RegisterTriggerInput);
+
+  iii.registerTrigger({
+    type: 'http',
+    function_id: cfg.eventsFn,
+    config: { api_path: cfg.eventsPath, http_method: 'GET' },
   } as RegisterTriggerInput);
 
   const on = (b: boolean) => (b ? 'on' : 'off');

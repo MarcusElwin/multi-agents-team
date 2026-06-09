@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, Code2, Sparkles } from 'lucide-react';
 import { ArticleAnalytics } from '@/app/components/ArticleAnalytics';
+import { SiteFooter } from '@/app/components/SiteFooter';
 
 const REPO_URL = 'https://github.com/MarcusElwin/multi-agents-team';
 
@@ -22,8 +23,11 @@ export default function AboutPage() {
           <span className="text-sm font-semibold">Multi-Agent Team</span>
         </Link>
         <div className="flex items-center gap-3">
-          <Link href="/references" className="text-sm text-stone-500 hover:text-stone-900">
+          <Link href="/references" className="hidden text-sm text-stone-500 hover:text-stone-900 sm:inline">
             References
+          </Link>
+          <Link href="/harness" className="hidden text-sm text-stone-500 hover:text-stone-900 sm:inline">
+            Harness
           </Link>
           <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-stone-900">
             <ArrowLeft className="h-3.5 w-3.5" /> Back
@@ -117,12 +121,7 @@ export default function AboutPage() {
         </div>
       </div>
 
-      <footer className="border-t border-stone-200 py-8 text-center text-xs text-stone-400">
-        Made with <span className="text-red-400">♥</span> in Stockholm by{' '}
-        <a href="https://umai-tech.com" target="_blank" rel="noopener noreferrer" className="font-medium text-stone-500 hover:text-stone-900 hover:underline">
-          Marcus Elwin @ UmaiTech
-        </a>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

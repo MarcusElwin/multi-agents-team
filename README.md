@@ -381,7 +381,11 @@ A built-in chat app at `/chat` (the landing page lives at `/`).
 - **Model selector** — models grouped by provider from `lib/models.ts`. The
   selected model applies to every agent in the run.
 - **Mode selector** — pick any of v1–v9, routing to `/api/agents` … `/api/agents-v9`.
-- **Settings** — enter/clear per-provider API keys (stored in your browser).
+- **Backend selector** — run a turn on the **in-app harness** (default) or the
+  **iii engine** (`lib/backends.ts`). Per-run here; the global default lives in
+  Settings. See [Backends](#backends-in-app-harness--iii-engine).
+- **Settings** — enter/clear per-provider API keys (stored in your browser), and
+  set the default execution backend.
 - **Architecture / Debug** — the per-mode diagram drawer and the live event stream.
 
 ### Conversation
@@ -431,6 +435,100 @@ curl -N -X POST http://localhost:3000/api/agents \
 Each run route also has a `GET` returning a small readiness/status object.
 
 ## Configuration
+
+### Backends: in-app harness ↔ iii engine
+
+Every run targets an **execution backend**, chosen per-run in the chat control
+row and defaulted globally in Settings (persisted in `localStorage`, threaded
+through the request body and validated in `lib/validate-request.ts`):
+
+| Backend | What runs the turn | Needs |
+| --- | --- | --- |
+| **In-app harness** (`current`, default) | The orchestrator/runners in `lib/` over the Vercel AI SDK, in-process. | Nothing — works out of the box. |
+| **iii engine** (`iii`) | The [iii](https://github.com/iii-hq/iii) engine: a separate process exposing a WebSocket bus of swappable workers (turn FSM, provider streaming, policy, budget, sessions, tracing). | A reachable engine; see env below. |
+
+When a run uses the `iii` backend, the route calls `runIiiBackend`
+(`lib/iii/run-iii.ts`), which **POSTs the turn to the engine over HTTPS** and
+replays the returned events into this app's `AgentEvent` stream — so the existing
+chat UI renders it unchanged. On the engine side, our worker (`iii-worker/`)
+registers a `mat::run` function (which drives the **same `lib/` runners** as the
+in-app path) plus a `POST /run` HTTP trigger. If the engine isn't configured or
+reachable, the run fails closed with a clear message and the in-app harness is
+unaffected.
+
+```bash
+# App side (set where the Next app runs, e.g. Vercel) — only the `iii` backend uses these
+III_ENGINE_HTTP_URL=https://mat-iii-engine.fly.dev  # engine HTTP endpoint
+III_ENGINE_TOKEN=<shared-secret>                    # authorizes a run (Bearer)
+III_RUN_PATH=/run                                   # worker's trigger path
+III_TURN_TIMEOUT_MS=240000                          # per-turn timeout
+NEXT_PUBLIC_III_BACKEND_ENABLED=true                # drop the "preview" hint in the UI
+```
+
+This is the first step of the [iii migration](https://github.com/MarcusElwin/multi-agents-team/issues/10):
+the toggle, the worker, and the integration seam land now; adopting iii's native
+policy/budget/session workers per pattern is the follow-up.
+
+### Deploy the iii engine (Fly.io)
+
+The engine is a long-running process, so it lives **off** Vercel. This repo ships
+a `Dockerfile` (engine `iiidev/iii` + the `iii-worker/`), `fly.toml`, and
+`docker-entrypoint.sh` to run both in one machine — the worker connects to the
+engine on `ws://localhost:49134` and the engine serves HTTP on `:3111`.
+
+```bash
+# 1. Create the Fly app (keeps the bundled fly.toml)
+fly launch --no-deploy
+
+# 2. Set a shared secret (and optionally server-side provider keys for non-BYO)
+fly secrets set III_ENGINE_TOKEN=$(openssl rand -hex 32)
+# fly secrets set OPENAI_API_KEY=...   # optional: engine's own keys
+
+# 3. Deploy
+fly deploy
+
+# 4. Point the Next app at it (Vercel env), using the SAME token:
+#    III_ENGINE_HTTP_URL=https://<app>.fly.dev
+#    III_ENGINE_TOKEN=<same secret>
+#    NEXT_PUBLIC_III_BACKEND_ENABLED=true
+```
+
+Locally you can run the engine (`iii --use-default-config`) and the worker
+(`pnpm worker`) in two terminals, with `III_ENGINE_HTTP_URL=http://localhost:3111`.
+BYO keys take one extra hop to the engine on this path — see `SECURITY.md` §2.
+
+### Adopting iii's prebuilt workers
+
+The worker keeps our `lib/` runners but exercises all four iii primitives —
+**functions, triggers, channels, streams** — leaning on iii's [registry
+workers](https://workers.iii.dev/) for the cross-cutting harness jobs.
+
+**Live events ride a channel.** `mat::run` is registered with iii's `http`
+helper, whose HTTP response *is* a channel — so the worker streams SSE events
+over the same `POST /run` connection (the app reads them exactly like the in-app
+SSE). No separate read endpoint, so there's nothing to "verify" for the default
+live path. Worker↔worker **channels** also back the optional artifact handoff.
+
+Each integration below is **off by default** and turns on with one env flag —
+set it on the worker (Fly secret) and, where noted, the app (Vercel):
+
+| Capability | Primitive | What it does | Flag |
+| --- | --- | --- | --- |
+| **live streaming** | channel (HTTP response) | Always on for inline runs — events stream over the response. | _(default)_ |
+| **iii-stream** | stream | Also publish events to a named stream for persistence / multiple subscribers / the queue path. | `III_STREAM_ENABLED` |
+| **iii-state** | function | Server-side session history keyed by `conversationId`, replacing localStorage-only history. | `III_STATE_ENABLED` |
+| **iii-queue** | trigger | Enqueue the turn so it outlives the HTTP request (durable long runs; fixes the [HITL timeout](https://github.com/MarcusElwin/multi-agents-team/issues/22)). Returns JSON; app reads the named stream. | `III_QUEUE_ENABLED` (+stream) |
+| **harness policy** | function | Gate tools (today `web_search`) through `policy::check_permissions` before they run — fail-closed. | `III_POLICY_ENABLED` |
+| **artifact channel** | channel | Hand a large final result to a sink worker over a channel instead of inlining it (`iii-worker/artifact.ts`). | `III_ARTIFACT_CHANNEL_ENABLED` |
+
+The policy gate uses an `AsyncLocalStorage` context (`lib/iii/policy-context.ts`),
+so shared tools stay provider-agnostic — it's a no-op on the in-app backend.
+
+> **Verify against a live engine.** Only the *optional* paths carry engine
+> unknowns — the named-stream read (queue path), and the policy/state/artifact
+> payload shapes. All are env-configurable and marked `VERIFY (live engine)` in
+> the worker source; the default channel-streamed path has none. See the full env
+> list in [`.env.example`](.env.example).
 
 ### Models, providers & cost — `lib/models.ts`
 

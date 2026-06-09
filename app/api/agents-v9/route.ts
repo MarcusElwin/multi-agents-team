@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runSwarm } from '@/lib/swarm-runner';
+import { runIiiBackend } from '@/lib/iii/run-iii';
 import { Conversation, type ConversationTurn } from '@/lib/conversation';
 import { resolveModel } from '@/lib/models';
 import { resolveCredentials } from '@/lib/provider';
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const { message, model, history, apiKey, provider } = parsed.body;
+  const { message, model, history, apiKey, provider, backend } = parsed.body;
 
   const resolvedModel = resolveModel(model);
   const creds = resolveCredentials({ model: resolvedModel, apiKey, provider });
@@ -57,8 +58,12 @@ export async function POST(req: NextRequest) {
       }, 15_000);
 
       try {
-        const conversation = new Conversation(priorTurns);
-        await runSwarm(message, { model: resolvedModel, apiKey: creds.apiKey, providerId: creds.providerId }, send, conversation);
+        if (backend === 'iii') {
+          await runIiiBackend({ mode: 'v9', message, model: resolvedModel, providerId: creds.providerId, apiKey: creds.apiKey, history: priorTurns, conversationId: parsed.body.conversationId, send });
+        } else {
+          const conversation = new Conversation(priorTurns);
+          await runSwarm(message, { model: resolvedModel, apiKey: creds.apiKey, providerId: creds.providerId }, send, conversation);
+        }
         // runSwarm emits its own workflow_complete.
 
         console.log('\n========================================');

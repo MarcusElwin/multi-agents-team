@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useRef, useEffect, type FormEvent } from 'react';
-import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown, Code2, Network, Settings, Menu } from 'lucide-react';
+import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown, Code2, Network, Settings, Menu, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { DEFAULT_MODEL, formatCost, providerForModel, type OpenAIModel } from '@/lib/models';
 import { MODES, type Mode, prettyAgentName } from '@/lib/modes';
+import { DEFAULT_BACKEND, type Backend } from '@/lib/backends';
 import { MarkdownContent } from '@/app/components/MarkdownContent';
 import { ModelSelector } from '@/app/components/ModelSelector';
 import { ModeSelector } from '@/app/components/ModeSelector';
+import { BackendSelector } from '@/app/components/BackendSelector';
 import { AgentTimeline, type LiveAgent } from '@/app/components/AgentTimeline';
 import { AgentTree, type TreeNode } from '@/app/components/AgentTree';
 import { ArchitectureDrawer } from '@/app/components/ArchitecturePanel';
@@ -17,6 +19,7 @@ import { ChatSidebar } from '@/app/components/ChatSidebar';
 import { BuildPlan } from '@/app/components/BuildPlan';
 import { StrategyView } from '@/app/components/StrategyViews';
 import { ReportView } from '@/app/components/ReportView';
+import { CopyButton } from '@/app/components/CopyButton';
 import { CodePreview } from '@/app/components/CodePreview';
 import type { ReportSpec } from '@/lib/tools/report';
 import { SettingsDrawer } from '@/app/components/SettingsDrawer';
@@ -68,6 +71,9 @@ function emptyRun(): LiveRun {
 export default function Home() {
   const [mode, setMode] = useState<Mode>('v1');
   const [model, setModel] = useState<OpenAIModel>(DEFAULT_MODEL);
+  // Per-run execution backend. Seeds from the saved global default (Settings)
+  // on a fresh chat, or restores from a stored chat when one is opened.
+  const [backend, setBackend] = useState<Backend>(DEFAULT_BACKEND);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   // live holds the streaming timeline for the chat currently on screen. It maps
@@ -77,7 +83,7 @@ export default function Home() {
   const [debugOpen, setDebugOpen] = useState(false);
   const [archOpen, setArchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const { settings, setApiKey, clearApiKey } = useSettings();
+  const { settings, setApiKey, clearApiKey, setBackend: setDefaultBackend } = useSettings();
   // Code preview side pane: opened from an agent deliverable's "View code".
   const [preview, setPreview] = useState<{ title: string; blocks: CodeBlock[] } | null>(null);
 
@@ -144,12 +150,20 @@ export default function Home() {
       setMessages(activeConversation.messages);
       setMode(activeConversation.mode);
       setModel(activeConversation.model as OpenAIModel);
+      setBackend(activeConversation.backend ?? settings.backend);
     } else {
       setMessages([]);
     }
     // Only keep the live timeline if it belongs to the chat we're switching to.
     if (liveRunId !== activeId) setLive(emptyRun());
-  }, [activeId, activeConversation, liveRunId]);
+  }, [activeId, activeConversation, liveRunId, settings.backend]);
+
+  // Keep a fresh (unsaved) chat's backend aligned with the saved global default,
+  // so changing the default in Settings is reflected before the first send. An
+  // opened chat restores its own backend above, so this only touches new chats.
+  useEffect(() => {
+    if (!activeConversation) setBackend(settings.backend);
+  }, [settings.backend, activeConversation]);
 
   function startNewChat() {
     // Leave any in-flight run alone — it streams in the background and writes
@@ -343,6 +357,7 @@ export default function Home() {
       messages: withUser,
       mode,
       model,
+      backend,
       status: 'running',
       now: Date.now(),
       activate: true,
@@ -361,7 +376,7 @@ export default function Home() {
     // workflow detection on completion.
     const provider = providerForModel(model);
     const startedAt = Date.now();
-    trackPromptSubmitted({ mode, model, provider, promptLength: trimmed.length });
+    trackPromptSubmitted({ mode, model, provider, promptLength: trimmed.length, backend });
 
     const endpoint = MODES[mode].endpoint;
     // Prior turns become the agents' memory. Snapshot before appending this turn.
@@ -385,6 +400,10 @@ export default function Home() {
           message: trimmed,
           model,
           history,
+          // Which execution backend runs this turn (in-app harness vs iii engine).
+          backend,
+          // Stable chat id, used by the iii backend for server-side sessions.
+          conversationId: runId,
           // BYO key: send the user's key for this model's provider, if set.
           provider,
           apiKey: settings.apiKeys[provider],
@@ -566,6 +585,7 @@ export default function Home() {
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <ModelSelector value={model} onChange={setModel} disabled={isLoading} />
           <ModeSelector value={mode} onChange={setMode} disabled={isLoading} />
+          <BackendSelector value={backend} onChange={setBackend} disabled={isLoading} />
           <button
             type="button"
             onClick={() => setSettingsOpen((v) => !v)}
@@ -719,6 +739,8 @@ export default function Home() {
         apiKeys={settings.apiKeys}
         onSetKey={setApiKey}
         onClearKey={clearApiKey}
+        backend={settings.backend}
+        onSetBackend={setDefaultBackend}
       />
 
       <CodePreview
@@ -992,10 +1014,26 @@ function MessageRow({
             </div>
           </div>
         )}
+        {/* Copy action below the bubble (ChatGPT-style), for any non-empty,
+            non-build-plan message. Aligns to the message side. */}
+        {!isBuildPlan && message.content.trim() && (
+          <div className={cn('px-1', isUser && 'self-end')}>
+            <CopyButton text={message.content} />
+          </div>
+        )}
         {message.meta && <MetaBar meta={message.meta} />}
       </div>
     </div>
   );
+}
+
+/** Human-friendly elapsed time: <1s → ms, <60s → s, else m s. */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.round((ms % 60_000) / 1000);
+  return s ? `${m}m ${s}s` : `${m}m`;
 }
 
 function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
@@ -1024,8 +1062,9 @@ function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
         </span>
       )}
       {meta.totalDuration !== undefined && (
-        <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-600">
-          {(meta.totalDuration / 1000).toFixed(1)}s
+        <span className="inline-flex items-center gap-1 rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-600" title="Total run time">
+          <Clock className="h-3 w-3" />
+          {formatDuration(meta.totalDuration)}
         </span>
       )}
       {meta.totalCostUsd !== undefined && meta.totalCostUsd > 0 && (
@@ -1055,7 +1094,7 @@ function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
             )}
           >
             {a.completed && <Check className="h-3 w-3" />}
-            {prettyAgentName(a.agent)} · {(a.duration / 1000).toFixed(1)}s
+            {prettyAgentName(a.agent)} · {formatDuration(a.duration)}
           </span>
         ))}
     </div>

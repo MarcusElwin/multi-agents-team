@@ -1,0 +1,76 @@
+/**
+ * Worker-side configuration. Every engine-specific function id, queue, stream,
+ * and feature flag is read from the environment with a sensible default, so the
+ * exact contracts can be pinned against a live engine without code changes.
+ *
+ * All four framework integrations (stream / state / queue / policy) default
+ * OFF — the verified batch path stays the default until each is confirmed on a
+ * real deploy. See README "Adopting iii's prebuilt workers".
+ */
+const env = (k: string) => process.env[k]?.trim() || undefined;
+const flag = (k: string) => process.env[k] === 'true';
+
+export const cfg = {
+  engineUrl: env('III_ENGINE_URL') || 'ws://localhost:49134',
+  runFn: env('MAT_RUN_FUNCTION_ID') || 'mat::run',
+  executeFn: env('MAT_EXECUTE_FUNCTION_ID') || 'mat::execute',
+  healthFn: env('MAT_HEALTH_FUNCTION_ID') || 'mat::health',
+  eventsFn: env('MAT_EVENTS_FUNCTION_ID') || 'mat::events',
+  streamListFn: env('III_STREAM_LIST_FN') || 'stream::list',
+  runPath: (() => {
+    const p = env('III_RUN_PATH') || '/run';
+    return p.startsWith('/') ? p : `/${p}`;
+  })(),
+  // The engine's HTTP API base (for the worker's own pre-flight duplicate
+  // check). Defaults to the bus host on :3111 (the engine REST port).
+  engineHttpUrl: (() => {
+    const explicit = env('III_ENGINE_HTTP_URL');
+    if (explicit) return explicit.replace(/\/$/, '');
+    const ws = env('III_ENGINE_URL') || 'ws://localhost:49134';
+    const host = ws.replace(/^wss?:\/\//, '').replace(/:\d+.*$/, '');
+    return `http://${host}:3111`;
+  })(),
+  eventsPath: (() => {
+    const p = env('III_EVENTS_PATH') || '/events';
+    return p.startsWith('/') ? p : `/${p}`;
+  })(),
+  healthPath: (() => {
+    const p = env('III_HEALTH_PATH') || '/health';
+    return p.startsWith('/') ? p : `/${p}`;
+  })(),
+  token: env('III_ENGINE_TOKEN'),
+
+  // iii-queue: enqueue runs so they outlive the HTTP request.
+  queueEnabled: flag('III_QUEUE_ENABLED'),
+  // Enqueue to the engine's built-in `default` queue (it exists with consumers
+  // out of the box). A custom name must be declared first via a queue trigger,
+  // which the engine rejects as "Queue '<name>' not found" otherwise.
+  queueName: env('III_QUEUE_NAME') || 'default',
+
+  // iii-stream: publish run events live.
+  streamEnabled: flag('III_STREAM_ENABLED'),
+  // The engine's stream worker stores an item via `stream::set` (create/overwrite,
+  // per iii-sdk's IStream<TData>.set / StreamSetInput). There is no
+  // `stream::publish` (that's the pub/sub `publish`, which wants a topic), and
+  // `stream::send` accepts the call but doesn't persist — items never list.
+  streamPublishFn: env('III_STREAM_PUBLISH_FN') || 'stream::set',
+  streamNamePrefix: env('III_STREAM_NAME_PREFIX') || 'mat:run:',
+  streamGroup: env('III_STREAM_GROUP') || 'events',
+
+  // iii-state: server-side session history.
+  stateEnabled: flag('III_STATE_ENABLED'),
+  stateGetFn: env('III_STATE_GET_FN') || 'state::get',
+  stateSetFn: env('III_STATE_SET_FN') || 'state::set',
+  stateScope: env('III_STATE_SCOPE') || 'mat:session',
+
+  // harness policy: gate tools via policy::check_permissions.
+  policyEnabled: flag('III_POLICY_ENABLED'),
+  policyFn: env('III_POLICY_FN') || 'policy::check_permissions',
+
+  // Channels: hand a large final artifact to a sink worker over a channel,
+  // instead of inlining it. The sink id can point at a dedicated render/store
+  // worker; with one worker it round-trips to a co-registered ack function.
+  artifactChannelEnabled: flag('III_ARTIFACT_CHANNEL_ENABLED'),
+  artifactThresholdBytes: Number(env('III_ARTIFACT_THRESHOLD_BYTES')) || 16_384,
+  artifactSinkFn: env('MAT_ARTIFACT_FUNCTION_ID') || 'mat::artifact',
+} as const;

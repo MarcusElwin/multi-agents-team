@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ProviderId } from '@/lib/models';
+import { asBackend, DEFAULT_BACKEND, type Backend } from '@/lib/backends';
 
 /**
  * Per-browser settings: bring-your-own API keys, one per provider. Mirrors
@@ -12,24 +13,29 @@ import type { ProviderId } from '@/lib/models';
  */
 export interface Settings {
   apiKeys: Partial<Record<ProviderId, string>>;
+  /** Global default execution backend; the per-run selector seeds from this. */
+  backend: Backend;
 }
 
 const STORAGE_KEY = 'mat:settings:v1';
 
+const EMPTY: Settings = { apiKeys: {}, backend: DEFAULT_BACKEND };
+
 function load(): Settings {
-  if (typeof window === 'undefined') return { apiKeys: {} };
+  if (typeof window === 'undefined') return { ...EMPTY };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { apiKeys: {} };
+    if (!raw) return { ...EMPTY };
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' && parsed.apiKeys ? (parsed as Settings) : { apiKeys: {} };
+    if (!parsed || typeof parsed !== 'object' || !parsed.apiKeys) return { ...EMPTY };
+    return { apiKeys: parsed.apiKeys, backend: asBackend(parsed.backend) };
   } catch {
-    return { apiKeys: {} };
+    return { ...EMPTY };
   }
 }
 
 export function useSettings() {
-  const [settings, setSettings] = useState<Settings>({ apiKeys: {} });
+  const [settings, setSettings] = useState<Settings>({ ...EMPTY });
   const hydrated = useRef(false);
 
   useEffect(() => {
@@ -63,5 +69,9 @@ export function useSettings() {
     [settings.apiKeys],
   );
 
-  return { settings, hydrated: hydrated.current, setApiKey, clearApiKey, hasKey };
+  const setBackend = useCallback((backend: Backend) => {
+    setSettings((s) => ({ ...s, backend }));
+  }, []);
+
+  return { settings, hydrated: hydrated.current, setApiKey, clearApiKey, hasKey, setBackend };
 }

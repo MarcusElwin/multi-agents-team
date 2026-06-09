@@ -178,6 +178,7 @@ export class AgentOrchestrator {
         log.kv({ User: `"${userMessage.slice(0, 80)}${userMessage.length > 80 ? '…' : ''}"` });
 
         const emit: EventSink = onEvent ?? (() => {});
+        const runStart = Date.now();
         emit({ type: 'workflow_start', mode: 'v1', model: this.model, query: userMessage, startingAgent: 'coordinator' });
 
         // Build agents for this run with hooks bound to this run's EventSink.
@@ -372,6 +373,7 @@ export class AgentOrchestrator {
                         totalInputTokens: totalIn,
                         totalOutputTokens: totalOut,
                         totalCostUsd: totalCost,
+                        totalDuration: Date.now() - runStart,
                     });
                     return completion.finalOutput;
                 }
@@ -420,7 +422,7 @@ export class AgentOrchestrator {
                         });
                     } else {
                         log.warn('No handoff from coordinator; ending workflow');
-                        emit({ type: 'workflow_complete', mode: 'v1', result: result.text, iterations });
+                        emit({ type: 'workflow_complete', mode: 'v1', result: result.text, iterations, totalDuration: Date.now() - runStart });
                         return result.text;
                     }
                 }
@@ -447,7 +449,7 @@ export class AgentOrchestrator {
         }
 
         log.warn('Max iterations reached');
-        emit({ type: 'workflow_complete', mode: 'v1', result: 'Workflow incomplete: maximum iterations reached', iterations });
+        emit({ type: 'workflow_complete', mode: 'v1', result: 'Workflow incomplete: maximum iterations reached', iterations, totalDuration: Date.now() - runStart });
         return 'Workflow incomplete: maximum iterations reached';
         } finally {
             this.bus.off('message', busListener);

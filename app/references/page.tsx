@@ -4,6 +4,7 @@ import { REFERENCE_SECTIONS, type RefType, logoFor, DARK_LOGOS } from '@/lib/ref
 import { MODE_LIST } from '@/lib/modes';
 import { ExportReport } from '@/app/components/ExportReport';
 import { ArticleAnalytics } from '@/app/components/ArticleAnalytics';
+import { SiteFooter } from '@/app/components/SiteFooter';
 
 /** A source logo (local SVG) in a tile — dark tile for white-art logos. */
 function SourceLogo({ source, url }: { source: string; url: string }) {
@@ -89,6 +90,9 @@ export default function ReferencesPage() {
         </Link>
         <div className="flex items-center gap-3">
           <ExportReport />
+          <Link href="/harness" className="hidden text-sm text-stone-500 hover:text-stone-900 sm:inline">
+            Harness
+          </Link>
           <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-stone-500 hover:text-stone-900">
             <ArrowLeft className="h-3.5 w-3.5" /> Back
           </Link>
@@ -152,12 +156,7 @@ export default function ReferencesPage() {
         </section>
       </div>
 
-      <footer className="border-t border-stone-200 py-8 text-center text-xs text-stone-400">
-        Made with <span className="text-red-400">♥</span> in Stockholm by{' '}
-        <a href="https://umai-tech.com" target="_blank" rel="noopener noreferrer" className="font-medium text-stone-500 hover:text-stone-900 hover:underline">
-          Marcus Elwin @ UmaiTech
-        </a>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

@@ -60,6 +60,7 @@ export function trackPromptSubmitted(p: {
   model: string;
   provider: string;
   promptLength: number;
+  backend?: string;
 }) {
   track('prompt_submitted', { ...p });
 }

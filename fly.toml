@@ -1,0 +1,30 @@
+# fly.toml app configuration file for mat-iii-engine.
+#
+# IMPORTANT: run exactly ONE machine. The engine holds each run's stream/state
+# in memory, so the queue/poll path (POST /run then GET /events) must hit the
+# same instance. Two machines = split brain (enqueue on A, poll on B → no
+# events). Deploy with HA off:  fly deploy --ha=false   (and `fly scale count 1`
+# if Fly ever spins up a second).
+#
+# See https://fly.io/docs/reference/configuration/
+
+app = 'mat-iii-engine'
+primary_region = 'arn'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  III_QUEUE_ENABLED = 'true'
+  III_STREAM_ENABLED = 'true'
+
+[http_service]
+  internal_port = 3111
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '1gb'

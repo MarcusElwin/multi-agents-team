@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { X, KeyRound, Eye, EyeOff, Check, ExternalLink, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { PROVIDER_LIST, type ProviderId } from '@/lib/models';
+import { BACKEND_LIST, III_BACKEND_ENABLED, type Backend } from '@/lib/backends';
 import { trackApiKeyConfigured } from '@/lib/analytics';
 
 /** True when this deployment requires visitors to bring their own key. */
@@ -15,9 +16,12 @@ interface SettingsDrawerProps {
   apiKeys: Partial<Record<ProviderId, string>>;
   onSetKey: (provider: ProviderId, key: string) => void;
   onClearKey: (provider: ProviderId) => void;
+  /** Global default execution backend. */
+  backend: Backend;
+  onSetBackend: (backend: Backend) => void;
 }
 
-export function SettingsDrawer({ open, onClose, apiKeys, onSetKey, onClearKey }: SettingsDrawerProps) {
+export function SettingsDrawer({ open, onClose, apiKeys, onSetKey, onClearKey, backend, onSetBackend }: SettingsDrawerProps) {
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
@@ -55,6 +59,56 @@ export function SettingsDrawer({ open, onClose, apiKeys, onSetKey, onClearKey }:
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto p-4 [scrollbar-width:thin]">
+          <section>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-stone-400">
+              Execution backend
+            </div>
+            <div className="space-y-1.5">
+              {BACKEND_LIST.map((b) => {
+                const Icon = b.icon;
+                const selected = b.value === backend;
+                const preview = b.value === 'iii' && !III_BACKEND_ENABLED;
+                return (
+                  <button
+                    key={b.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => onSetBackend(b.value)}
+                    className={cn(
+                      'flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
+                      selected
+                        ? 'border-stone-900 bg-stone-50'
+                        : 'border-stone-200 hover:bg-stone-50',
+                    )}
+                  >
+                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-stone-100">
+                      <Icon className="h-3.5 w-3.5 text-stone-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-sm font-medium text-stone-900">
+                        {b.name}
+                        {preview && (
+                          <span className="rounded bg-amber-100 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-700">
+                            preview
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] leading-snug text-stone-500">{b.description}</div>
+                    </div>
+                    {selected && <Check className="mt-0.5 h-4 w-4 shrink-0 text-stone-700" />}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-stone-400">
+              The default for new chats. Each chat can override it from the selector next to the
+              model picker.
+            </p>
+          </section>
+
+          <div className="h-px bg-stone-100" />
+
           {BYO_KEY_ONLY && (
             <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] leading-snug text-amber-900">
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />

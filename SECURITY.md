@@ -53,6 +53,29 @@ read them. A more defensive design (httpOnly cookie + server-side key vault)
 would require introducing a backend session layer, which is out of scope for a
 keyless demo.
 
+### Residual risk — the `iii` backend forwards the key to the engine
+
+When a run uses the **`iii` execution backend** (not the default in-app harness),
+the route POSTs the turn to a separately-hosted iii engine, and the visitor's
+key travels **one extra hop**: app → engine (`lib/iii/run-iii.ts` →
+`iii-worker/`). Mitigations and the accepted tradeoff:
+
+- The hop is over **HTTPS/TLS** and authorized by a shared **`III_ENGINE_TOKEN`**
+  (Bearer header + body field), so the engine endpoint isn't open to the world.
+- The engine uses the key **only for that request** (passed straight into the
+  same `withProvider` scope the in-app path uses) and does not persist it.
+- The key still leaves this app's origin and trust boundary, which the default
+  backend never does. Operators who don't want this can leave the `iii` backend
+  unconfigured (`III_ENGINE_HTTP_URL` unset) — it then can't be used — or run the
+  engine with its **own** provider keys so visitor keys are never forwarded.
+
+On the plus side, the `iii` path can **add** a control the in-app backend lacks:
+with `III_POLICY_ENABLED=true`, tools are gated by the harness's
+`policy::check_permissions` (driven by `iii-permissions.yaml`) **before** they run
+— fail-closed, so an unreachable policy worker denies rather than allows. Today
+this guards `web_search` (the only tool reaching the public internet); the gate
+(`lib/iii/policy-context.ts`) is a no-op on the in-app backend.
+
 ---
 
 ## 3. Request attack surface

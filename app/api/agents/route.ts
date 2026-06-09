@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AgentOrchestrator } from '@/lib/orchestrator';
+import { runIiiBackend } from '@/lib/iii/run-iii';
 import { Conversation, type ConversationTurn } from '@/lib/conversation';
 import { resolveModel } from '@/lib/models';
 import { resolveCredentials } from '@/lib/provider';
@@ -7,7 +8,10 @@ import { describeError } from '@/lib/error-message';
 import { validateAgentRunBody } from '@/lib/validate-request';
 import type { AgentEvent } from '@/lib/agent-events';
 
-export const maxDuration = 60;
+// v1 runs a coordinator + researcher (web search) + writer + editor; a
+// research-heavy turn takes ~2 min, so 60s killed real runs (and the iii path,
+// whose turn timeout is 240s). Match the heavier modes / Vercel's max.
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
@@ -21,7 +25,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const { message, model, history, apiKey, provider } = parsed.body;
+  const { message, model, history, apiKey, provider, backend } = parsed.body;
 
   const resolvedModel = resolveModel(model);
   const creds = resolveCredentials({ model: resolvedModel, apiKey, provider });
@@ -57,10 +61,14 @@ export async function POST(req: NextRequest) {
       }, 15_000);
 
       try {
-        const orchestrator = new AgentOrchestrator({ model: resolvedModel, apiKey: creds.apiKey, providerId: creds.providerId });
-        const conversation = new Conversation(priorTurns);
-        await orchestrator.processUserMessage(message, send, conversation);
-        // The orchestrator emits its own workflow_complete; don't duplicate it here.
+        if (backend === 'iii') {
+          await runIiiBackend({ mode: 'v1', message, model: resolvedModel, providerId: creds.providerId, apiKey: creds.apiKey, history: priorTurns, conversationId: parsed.body.conversationId, send });
+        } else {
+          const orchestrator = new AgentOrchestrator({ model: resolvedModel, apiKey: creds.apiKey, providerId: creds.providerId });
+          const conversation = new Conversation(priorTurns);
+          await orchestrator.processUserMessage(message, send, conversation);
+          // The orchestrator emits its own workflow_complete; don't duplicate it here.
+        }
 
         console.log('\n========================================');
         console.log('✅ API RESPONSE: Workflow Complete');

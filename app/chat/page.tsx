@@ -19,6 +19,7 @@ import { ChatSidebar } from '@/app/components/ChatSidebar';
 import { BuildPlan } from '@/app/components/BuildPlan';
 import { StrategyView } from '@/app/components/StrategyViews';
 import { ReportView } from '@/app/components/ReportView';
+import { CopyButton } from '@/app/components/CopyButton';
 import { CodePreview } from '@/app/components/CodePreview';
 import type { ReportSpec } from '@/lib/tools/report';
 import { SettingsDrawer } from '@/app/components/SettingsDrawer';
@@ -1011,6 +1012,13 @@ function MessageRow({
                 </button>
               )}
             </div>
+          </div>
+        )}
+        {/* Copy action below the bubble (ChatGPT-style), for any non-empty,
+            non-build-plan message. Aligns to the message side. */}
+        {!isBuildPlan && message.content.trim() && (
+          <div className={cn('px-1', isUser && 'self-end')}>
+            <CopyButton text={message.content} />
           </div>
         )}
         {message.meta && <MetaBar meta={message.meta} />}

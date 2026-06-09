@@ -1,7 +1,12 @@
-# fly.toml app configuration file generated for mat-iii-engine on 2026-06-09T22:11:03+02:00
+# fly.toml app configuration file for mat-iii-engine.
 #
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+# IMPORTANT: run exactly ONE machine. The engine holds each run's stream/state
+# in memory, so the queue/poll path (POST /run then GET /events) must hit the
+# same instance. Two machines = split brain (enqueue on A, poll on B → no
+# events). Deploy with HA off:  fly deploy --ha=false   (and `fly scale count 1`
+# if Fly ever spins up a second).
 #
+# See https://fly.io/docs/reference/configuration/
 
 app = 'mat-iii-engine'
 primary_region = 'arn'

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, type FormEvent } from 'react';
-import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown, Code2, Network, Settings, Menu } from 'lucide-react';
+import { ArrowUp, Bot, User, Sparkles, Check, Loader2, Bug, ChevronDown, Code2, Network, Settings, Menu, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { DEFAULT_MODEL, formatCost, providerForModel, type OpenAIModel } from '@/lib/models';
 import { MODES, type Mode, prettyAgentName } from '@/lib/modes';
@@ -1027,6 +1027,15 @@ function MessageRow({
   );
 }
 
+/** Human-friendly elapsed time: <1s → ms, <60s → s, else m s. */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.round((ms % 60_000) / 1000);
+  return s ? `${m}m ${s}s` : `${m}m`;
+}
+
 function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
@@ -1053,8 +1062,9 @@ function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
         </span>
       )}
       {meta.totalDuration !== undefined && (
-        <span className="rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-600">
-          {(meta.totalDuration / 1000).toFixed(1)}s
+        <span className="inline-flex items-center gap-1 rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-stone-600" title="Total run time">
+          <Clock className="h-3 w-3" />
+          {formatDuration(meta.totalDuration)}
         </span>
       )}
       {meta.totalCostUsd !== undefined && meta.totalCostUsd > 0 && (
@@ -1084,7 +1094,7 @@ function MetaBar({ meta }: { meta: NonNullable<ChatMessage['meta']> }) {
             )}
           >
             {a.completed && <Check className="h-3 w-3" />}
-            {prettyAgentName(a.agent)} · {(a.duration / 1000).toFixed(1)}s
+            {prettyAgentName(a.agent)} · {formatDuration(a.duration)}
           </span>
         ))}
     </div>

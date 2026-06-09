@@ -7,6 +7,7 @@ import {
   iiiEngineToken,
   iiiEventsPath,
   iiiHealthPath,
+  iiiQueuePollTimeoutMs,
   iiiRunPath,
   iiiTurnTimeoutMs,
 } from './config';
@@ -215,7 +216,10 @@ export async function runIiiBackend(ctx: IiiRunContext): Promise<void> {
     if (data.queued && data.runId) {
       const runId = data.runId;
       const eventsUrl = base.replace(/\/$/, '') + iiiEventsPath();
-      const deadline = Date.now() + iiiTurnTimeoutMs();
+      // A queued run isn't bound by the inline turn timeout — it runs on the
+      // engine independent of this request, so allow a much longer poll window
+      // (heavy research runs on a slow model can take many minutes).
+      const deadline = Date.now() + iiiQueuePollTimeoutMs();
       let cursor = 0;
       let idle = 0;
       while (Date.now() < deadline) {

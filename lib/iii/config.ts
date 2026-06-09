@@ -29,6 +29,16 @@ export function iiiEventsPath(): string {
   return p.startsWith('/') ? p : `/${p}`;
 }
 
+/**
+ * How long the app keeps polling a queued run's events before giving up. A
+ * queued run executes independent of this request, so this can be much longer
+ * than the inline turn timeout. Default 15 min.
+ */
+export function iiiQueuePollTimeoutMs(): number {
+  const raw = Number(process.env.III_QUEUE_POLL_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 900_000;
+}
+
 /** Shared secret sent as a Bearer token (and body field) to authorize a run. */
 export function iiiEngineToken(): string | undefined {
   return process.env.III_ENGINE_TOKEN?.trim() || undefined;

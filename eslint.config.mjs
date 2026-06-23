@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The eve agent project is compiled/deployed by eve's own toolchain
+    // (`eve dev` / `vercel deploy`), not the Next build — keep it out of the
+    // app's lint/typecheck (it depends on the `eve` package, not installed here).
+    "eve-app/**",
   ]),
 ]);
 

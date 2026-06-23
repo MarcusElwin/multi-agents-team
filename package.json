@@ -11,7 +11,9 @@
     "test:agents": "tsx scripts/test-agents.ts",
     "test:runner": "tsx scripts/test-runner.ts",
     "test:smoke": "tsx scripts/smoke-test.ts",
-    "worker": "tsx iii-worker/index.ts"
+    "worker": "tsx iii-worker/index.ts",
+    "eve:dev": "cd eve-app && eve dev",
+    "eve:deploy": "cd eve-app && vercel deploy"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.80",

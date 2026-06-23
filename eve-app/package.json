@@ -1,0 +1,17 @@
+{
+  "name": "mat-eve-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The eve (Vercel) agent for the multi-agent team — the nine coordination patterns exposed as durable eve harnesses, one per architecture.",
+  "type": "module",
+  "scripts": {
+    "dev": "eve dev",
+    "deploy": "vercel deploy",
+    "deploy:prod": "vercel deploy --prod"
+  },
+  "comment": "Run `npx eve@latest` here to install the eve CLI + package and generate the real types; the app reuses this repo's lib/ runners via the @/* path (see tsconfig.json).",
+  "dependencies": {
+    "eve": "latest",
+    "zod": "^4.1.12"
+  }
+}

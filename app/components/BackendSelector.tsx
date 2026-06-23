@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
-import { BACKEND_LIST, III_BACKEND_ENABLED, type Backend } from '@/lib/backends';
+import { BACKEND_LIST, isBackendPreview, type Backend } from '@/lib/backends';
 
 /**
  * Per-run backend toggle, sitting beside the Model/Mode selectors in the chat
@@ -66,7 +66,7 @@ export function BackendSelector({
           {BACKEND_LIST.map((opt) => {
             const selected = opt.value === value;
             const Icon = opt.icon;
-            const preview = opt.value === 'iii' && !III_BACKEND_ENABLED;
+            const preview = isBackendPreview(opt.value);
             return (
               <button
                 key={opt.value}

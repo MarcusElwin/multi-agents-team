@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runHierarchical } from '@/lib/hierarchical-runner';
 import { runIiiBackend } from '@/lib/iii/run-iii';
+import { runEveBackend } from '@/lib/eve/run-eve';
 import { Conversation, type ConversationTurn } from '@/lib/conversation';
 import { resolveModel } from '@/lib/models';
 import { resolveCredentials } from '@/lib/provider';
@@ -60,6 +61,8 @@ export async function POST(req: NextRequest) {
       try {
         if (backend === 'iii') {
           await runIiiBackend({ mode: 'v3', message, model: resolvedModel, providerId: creds.providerId, apiKey: creds.apiKey, history: priorTurns, conversationId: parsed.body.conversationId, send });
+        } else if (backend === 'eve') {
+          await runEveBackend({ mode: 'v3', message, model: resolvedModel, providerId: creds.providerId, apiKey: creds.apiKey, history: priorTurns, conversationId: parsed.body.conversationId, send });
         } else {
           const conversation = new Conversation(priorTurns);
           await runHierarchical(message, { model: resolvedModel, apiKey: creds.apiKey, providerId: creds.providerId }, send, conversation);

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { X, KeyRound, Eye, EyeOff, Check, ExternalLink, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { PROVIDER_LIST, type ProviderId } from '@/lib/models';
-import { BACKEND_LIST, III_BACKEND_ENABLED, type Backend } from '@/lib/backends';
+import { BACKEND_LIST, isBackendPreview, type Backend } from '@/lib/backends';
 import { trackApiKeyConfigured } from '@/lib/analytics';
 
 /** True when this deployment requires visitors to bring their own key. */
@@ -67,7 +67,7 @@ export function SettingsDrawer({ open, onClose, apiKeys, onSetKey, onClearKey, b
               {BACKEND_LIST.map((b) => {
                 const Icon = b.icon;
                 const selected = b.value === backend;
-                const preview = b.value === 'iii' && !III_BACKEND_ENABLED;
+                const preview = isBackendPreview(b.value);
                 return (
                   <button
                     key={b.value}

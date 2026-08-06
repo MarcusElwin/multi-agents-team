@@ -1,0 +1,10 @@
+#,Pattern,In one line,Best when,Main trade-off
+v1,Orchestrated,"A coordinator plans and delegates to specialists, then synthesizes.",Linear pipelines with clear steps.,Coordinator is a bottleneck; no parallelism.
+v2,Choreographed,Peers message each other over a bus until all are done.,Cross-functional negotiation on a shared artifact.,Convergence isn't guaranteed.
+v3,Hierarchical,A lead spawns sub-agents at runtime; results roll up a tree.,Open-ended tasks with nested subtasks.,Emergent tree shape; more tokens.
+v4,Evaluator–Optimizer,Generate → critique → revise until a bar is met.,Iteratively improving one artifact.,Cost grows per round.
+v5,Debate,Opposing sides argue; a judge decides.,Decisions where both cases should be heard.,Verdict quality depends on the judge.
+v6,Blackboard,Agents share one workspace; a controller picks who acts next.,Answers assembled from partial contributions.,Controller can loop; slower.
+v7,Market,Agents bid on posted tasks; best bid wins.,"Heterogeneous work, unclear assignment.",The bid round is extra LLM calls.
+v8,Self-Consistency,Sample N attempts in parallel; a judge picks or merges.,Agreement across attempts signals quality.,N× tokens for sampling.
+v9,Swarm,Identical agents build on a shared scratchpad.,Open-ended ideation via many cheap passes.,Redundancy and drift.

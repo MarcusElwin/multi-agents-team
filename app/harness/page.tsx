@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, Cpu, Network, Check, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Cpu, Network, Triangle, Check, Sparkles } from 'lucide-react';
 import { ArticleAnalytics } from '@/app/components/ArticleAnalytics';
 import { SiteFooter } from '@/app/components/SiteFooter';
 
@@ -7,62 +7,72 @@ const REPO_URL = 'https://github.com/MarcusElwin/multi-agents-team';
 const ISSUE_URL = `${REPO_URL}/issues/10`;
 
 export const metadata = {
-  title: 'Harness — original vs the iii refactor',
+  title: 'Harness — original vs iii vs eve',
   description:
-    'A side-by-side comparison of this project\'s original hand-rolled agent harness and the iii refactor: what a harness does, how each handles the ~dozen jobs, and the trade-offs.',
+    "A side-by-side comparison of this project's three execution backends — the original hand-rolled harness, the iii refactor, and Vercel's eve — what a harness does, how each handles the ~dozen jobs, and the trade-offs.",
 };
 
 /** The jobs a production agent harness does, and how each backend handles them. */
-const COMPARISON: Array<{ job: string; original: string; iii: string }> = [
+const COMPARISON: Array<{ job: string; original: string; iii: string; eve: string }> = [
   {
     job: 'Turn / workflow FSM',
     original: 'Hand-rolled orchestrator + per-pattern runners in lib/ (~1,900 lines)',
     iii: 'Same runners, but run inside a worker on the engine bus; optionally queue-backed so a turn outlives the request',
+    eve: 'Same runners, wrapped as a durable eve session — checkpointed, so a turn resumes after a crash/deploy',
   },
   {
     job: 'Provider streaming',
     original: 'Vercel AI SDK, in-process',
     iii: 'Kept — the same AI SDK runners run inside the worker',
+    eve: 'Kept — the same AI SDK runners run inside the eve agent',
   },
   {
     job: 'Events → UI',
     original: 'SSE from the Next route',
     iii: 'Live SSE streamed over a channel (the HTTP response itself)',
+    eve: 'NDJSON session lifecycle events, replayed into the same stream',
   },
   {
     job: 'Tool calling',
     original: 'AI SDK tool() + zod',
     iii: 'Same tools, gated by a policy check before they run',
+    eve: 'Same tools; eve adds per-tool approval gates (HITL)',
   },
   {
     job: 'Policy / permissions',
     original: 'None — every tool runs unchecked',
     iii: 'policy::check_permissions + iii-permissions.yaml, fail-closed',
+    eve: 'eve approval gates, configurable per tool',
   },
   {
     job: 'Cost / budget',
     original: 'Estimate only (lib/models.ts); nothing stops a run',
     iii: 'llm-budget worker — real caps, alerts, forecasts',
+    eve: 'Token usage + timing per run in the Vercel dashboard (Agent Runs)',
   },
   {
     job: 'Sessions / history',
     original: 'Browser localStorage only',
     iii: 'iii-state — server-side, keyed by conversation',
+    eve: 'Durable sessions — checkpointed server-side, resumable by token',
   },
   {
     job: 'Human-in-the-loop',
     original: 'In-memory map, single-process, 5-min timeout',
     iii: 'Durable via the queue + state (survives restarts)',
+    eve: 'Durable via checkpointed sessions + approval gates',
   },
   {
     job: 'Observability',
     original: 'Terminal logging (chalk / boxen)',
     iii: 'OpenTelemetry spans per worker, automatically',
+    eve: 'OpenTelemetry tracing + Agent Runs in the Vercel dashboard',
   },
   {
     job: 'Deploy surface',
     original: 'One Next.js app — zero extra services',
     iii: 'Next app + the iii engine (a separate process, e.g. on Fly)',
+    eve: 'Next app + an eve agent deployed on Vercel Functions',
   },
 ];
 
@@ -106,21 +116,21 @@ export default function HarnessPage() {
 
       <section className="mx-auto max-w-3xl px-6 pt-10 pb-8 text-center">
         <p className="mb-4 inline-block rounded-full border border-stone-200 bg-white px-3 py-1 text-xs font-medium text-stone-500">
-          Two backends, one app
+          Three backends, one app
         </p>
         <h1 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-          The harness: original vs the iii refactor
+          The harness: original vs iii vs eve
         </h1>
         <p className="mx-auto mt-4 max-w-2xl text-stone-600">
           A “harness” is everything around the model that turns a chat into an agent run — the turn
-          loop, tool calls, streaming, sessions, policy, budget, and tracing. This app ships two of
+          loop, tool calls, streaming, sessions, policy, budget, and tracing. This app ships three of
           them, switchable per run from the chat UI.
         </p>
       </section>
 
-      <div className="mx-auto max-w-4xl space-y-6 px-6 pb-20">
+      <div className="mx-auto max-w-5xl space-y-6 px-6 pb-20">
         {/* Side-by-side */}
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-2xl border border-stone-200 bg-white p-6">
             <div className="flex items-center gap-2">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-100">
@@ -166,6 +176,31 @@ export default function HarnessPage() {
               ]}
             />
           </div>
+
+          <div className="rounded-2xl border border-stone-200 bg-white p-6">
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-100">
+                <Triangle className="h-4 w-4 text-stone-600" />
+              </span>
+              <h2 className="text-base font-semibold">Vercel — eve</h2>
+            </div>
+            <p className="mt-3 text-sm leading-relaxed text-stone-600">
+              The same runners, shipped as a filesystem-first{' '}
+              <a href="https://vercel.com/eve" target="_blank" rel="noopener noreferrer" className="underline-offset-2 hover:underline">
+                eve
+              </a>{' '}
+              agent — one durable harness per architecture — deployed on Vercel Functions, where each
+              run is a checkpointed session.
+            </p>
+            <Pros
+              items={[
+                'Durable sessions: a run survives a crash, deploy, or cold start',
+                'Sandboxes for parallel fan-out (v3 / v7 / v8 / v9)',
+                'Approval gates for human-in-the-loop, tracing + Agent Runs',
+                'Cost: a second deploy, and eve is still in beta',
+              ]}
+            />
+          </div>
         </div>
 
         {/* Comparison table */}
@@ -174,15 +209,18 @@ export default function HarnessPage() {
             Job by job
           </h2>
           <div className="mt-4 overflow-x-auto [scrollbar-width:thin]">
-            <table className="w-full min-w-[44rem] border-collapse text-sm">
+            <table className="w-full min-w-[60rem] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-stone-200 text-left text-[11px] uppercase tracking-wide text-stone-400">
                   <th className="py-2 pr-4 font-semibold">Harness job</th>
                   <th className="px-4 py-2 font-semibold">
                     <span className="inline-flex items-center gap-1.5"><Cpu className="h-3.5 w-3.5" /> Original</span>
                   </th>
-                  <th className="pl-4 py-2 font-semibold">
+                  <th className="px-4 py-2 font-semibold">
                     <span className="inline-flex items-center gap-1.5"><Network className="h-3.5 w-3.5" /> iii refactor</span>
+                  </th>
+                  <th className="pl-4 py-2 font-semibold">
+                    <span className="inline-flex items-center gap-1.5"><Triangle className="h-3.5 w-3.5" /> eve (Vercel)</span>
                   </th>
                 </tr>
               </thead>
@@ -191,7 +229,8 @@ export default function HarnessPage() {
                   <tr key={row.job} className="border-b border-stone-100 align-top last:border-0">
                     <td className="py-3 pr-4 font-medium text-stone-800">{row.job}</td>
                     <td className="px-4 py-3 text-stone-600">{row.original}</td>
-                    <td className="pl-4 py-3 text-stone-600">{row.iii}</td>
+                    <td className="px-4 py-3 text-stone-600">{row.iii}</td>
+                    <td className="pl-4 py-3 text-stone-600">{row.eve}</td>
                   </tr>
                 ))}
               </tbody>
@@ -207,10 +246,10 @@ export default function HarnessPage() {
           <p className="mt-3 leading-relaxed text-stone-600">
             Every run targets a backend, picked from a selector next to the model and mode dropdowns
             (with a global default in Settings). The choice is threaded through the request and the
-            API route, which dispatches to the in-app runners or hands the turn to the iii engine.
-            The <strong>in-app harness is the default</strong> and is fully self-contained; the iii
-            path activates only when an engine is configured. Same UI, same nine patterns, either
-            way.
+            API route, which dispatches to the in-app runners, hands the turn to the iii engine, or
+            starts a durable eve session. The <strong>in-app harness is the default</strong> and is
+            fully self-contained; the iii and eve paths activate only when each is configured. Same
+            UI, same nine patterns, whichever you pick.
           </p>
         </div>
 
@@ -246,7 +285,10 @@ export default function HarnessPage() {
             <strong>original in-app harness</strong> wins — nothing to operate, and the coordination
             logic is right there in the source. Reach for the <strong>iii engine</strong> when you
             want the production properties it adds for free: a policy layer, real budget caps,
-            durable server-side sessions, and tracing — accepting a second runtime to run.
+            durable server-side sessions, and tracing — accepting a second runtime to run. Pick{' '}
+            <strong>eve</strong> when you want that durability on Vercel itself: checkpointed
+            sessions that resume after a crash or deploy, sandboxes for the parallel patterns, and
+            approval gates — deployed as a Vercel Function alongside the app.
           </p>
         </div>
 
@@ -255,7 +297,7 @@ export default function HarnessPage() {
             href="/chat"
             className="inline-flex items-center gap-1.5 rounded-full bg-stone-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-800"
           >
-            Try both in the app <ArrowRight className="h-4 w-4" />
+            Try all three in the app <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
       </div>

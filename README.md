@@ -381,9 +381,9 @@ A built-in chat app at `/chat` (the landing page lives at `/`).
 - **Model selector** — models grouped by provider from `lib/models.ts`. The
   selected model applies to every agent in the run.
 - **Mode selector** — pick any of v1–v9, routing to `/api/agents` … `/api/agents-v9`.
-- **Backend selector** — run a turn on the **in-app harness** (default) or the
-  **iii engine** (`lib/backends.ts`). Per-run here; the global default lives in
-  Settings. See [Backends](#backends-in-app-harness--iii-engine).
+- **Backend selector** — run a turn on the **in-app harness** (default), the
+  **iii engine**, or **eve (Vercel)** (`lib/backends.ts`). Per-run here; the
+  global default lives in Settings. See [Backends](#backends-in-app-harness--iii-engine).
 - **Settings** — enter/clear per-provider API keys (stored in your browser), and
   set the default execution backend.
 - **Architecture / Debug** — the per-mode diagram drawer and the live event stream.
@@ -446,6 +446,7 @@ through the request body and validated in `lib/validate-request.ts`):
 | --- | --- | --- |
 | **In-app harness** (`current`, default) | The orchestrator/runners in `lib/` over the Vercel AI SDK, in-process. | Nothing — works out of the box. |
 | **iii engine** (`iii`) | The [iii](https://github.com/iii-hq/iii) engine: a separate process exposing a WebSocket bus of swappable workers (turn FSM, provider streaming, policy, budget, sessions, tracing). | A reachable engine; see env below. |
+| **eve (Vercel)** (`eve`) | A deployed [eve](https://vercel.com/eve) agent (filesystem-first, **durable** sessions on Vercel Functions). The same nine runners ship as one eve agent — a harness per architecture (`eve-app/`). | A deployed eve app; set `EVE_BASE_URL`. See [Deploy the eve backend](#deploy-the-eve-backend-vercel). |
 
 When a run uses the `iii` backend, the route calls `runIiiBackend`
 (`lib/iii/run-iii.ts`), which **POSTs the turn to the engine over HTTPS** and
@@ -530,6 +531,50 @@ so shared tools stay provider-agnostic — it's a no-op on the in-app backend.
 > the worker source; the default channel-streamed path has none. See the full env
 > list in [`.env.example`](.env.example).
 
+### Deploy the eve backend (Vercel)
+
+The `eve` backend runs each turn on [eve](https://vercel.com/eve), Vercel's
+**filesystem-first, durable** agent framework. The agent lives in
+[`eve-app/`](eve-app/README.md): the project's nine coordination patterns, each
+adapted as its own **harness** (`eve-app/agent/harnesses/`). The same `lib/`
+runners that power the in-app backend run inside an eve **session** — which is
+checkpointed, so a run survives a crash, a deploy, or a cold start and resumes
+from its last step. Fan-out patterns (v3 hierarchical, v8 self-consistency, v9
+swarm, v7 bids) use eve **sandboxes** for parallel sub-runs; v1 can pause on an
+eve **approval gate**; each harness sets its own **context-control** strategy.
+
+```bash
+# 1. Install the eve CLI + package and generate types (run inside eve-app/)
+cd eve-app
+npx eve@latest
+
+# 2. Deploy the agent to Vercel Functions
+vercel deploy            # vercel deploy --prod for production
+
+# 3. Set a shared secret on the eve deployment (Vercel env), and optionally the
+#    engine's own provider keys for non-BYO runs:
+#    EVE_API_TOKEN=<secret>   OPENAI_API_KEY=...
+
+# 4. Point the Next app at it (the app's Vercel env), using the SAME token:
+#    EVE_BASE_URL=https://<your-eve-app>.vercel.app
+#    EVE_API_TOKEN=<same secret>
+#    NEXT_PUBLIC_EVE_BACKEND_ENABLED=true   # drop the "preview" badge in the UI
+```
+
+Then pick **eve (Vercel)** in the chat backend selector (or set it as the default
+in Settings). The app starts a durable eve session per turn
+(`lib/eve/run-eve.ts`) and replays the session's NDJSON lifecycle events into the
+same `AgentEvent` stream — so the chat UI renders an eve run unchanged. If no eve
+app is configured or reachable, the run fails closed with a clear message and the
+in-app harness is unaffected. The full env list is in [`.env.example`](.env.example);
+the agent's layout and per-architecture harness table are in
+[`eve-app/README.md`](eve-app/README.md).
+
+> **Beta note.** eve is in beta. The app-side adapter (`lib/eve/run-eve.ts`) is a
+> pure HTTP client and is part of the typechecked build; the `eve`-package glue in
+> `eve-app/` is compiled by eve's own toolchain (excluded from the Next build) and
+> marked `VERIFY (eve beta)` where the API may still shift.
+
 ### Models, providers & cost — `lib/models.ts`
 
 ```typescript
@@ -579,7 +624,14 @@ multi-agents-team/
 │   ├── modes.ts                         # v1–v9 mode specs (+ references)
 │   ├── validate-request.ts              # request-body validation/bounds
 │   ├── conversation.ts / message-bus.ts # per-run state
+│   ├── iii/                             # iii backend adapter (config, run, stream)
+│   ├── eve/                             # eve backend adapter (config, run, NDJSON)
 │   └── agent-events.ts                  # AgentEvent union + RunSummary
+├── iii-worker/                          # the iii engine-side worker (mode→runner)
+├── eve-app/                             # the eve (Vercel) agent — a harness per architecture
+│   ├── agent/harnesses/v1..v9           # the nine architectures as eve harnesses
+│   ├── agent/channels/http.ts           # durable session entrypoint (NDJSON events)
+│   └── shared/run.ts                    # mode→runner dispatch
 ├── scripts/                             # test-agents, test-runner, smoke-test
 ├── docs/                                # ARCHITECTURE.md, images/
 ├── SECURITY.md
